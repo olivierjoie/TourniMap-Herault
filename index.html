@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>TourniMap Hérault</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        #map { height: 80vh; width: 100%; }
+        .stats { padding: 10px; background: #f4f4f4; border-bottom: 1px solid #ccc; }
+    </style>
+</head>
+<body>
+    <div class="stats" id="info-zone">Sélectionnez une zone pour voir l'itinéraire</div>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // 1. Initialisation de la carte sur Montpellier
+        var map = L.map('map').setView([43.6107, 3.8767], 12); 
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        // 2. Point de départ imposé (2300 Av. des Moulins)
+        var depart = [43.6219, 3.8347]; 
+        L.marker(depart, {title: "Départ officiel"}).addTo(map).bindPopup("<b>Point de départ</b><br>2300 Av. des Moulins");
+
+        // TODO: Ajouter ici la fonction pour charger le CSV et filtrer par les 13 zones
+    </script>
+</body>
+</html>
