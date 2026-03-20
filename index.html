@@ -5,80 +5,67 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TourniMap Hérault | MBS Junior Conseil</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --primary: #2563eb;
-            --dark: #1e293b;
-            --bg: #f8fafc;
-        }
-        body { margin: 0; font-family: 'Inter', sans-serif; display: flex; height: 100vh; background: var(--bg); overflow: hidden; }
+        :root { --primary: #2563eb; --dark: #1e293b; --bg: #f8fafc; }
+        body { margin: 0; font-family: 'Inter', sans-serif; display: flex; height: 100vh; background: var(--bg); }
         
-        /* Sidebar Style */
         #sidebar { 
-            width: 350px; 
-            background: white; 
-            display: flex; 
-            flex-direction: column; 
-            box-shadow: 4px 0 15px rgba(0,0,0,0.05);
-            z-index: 2000;
-            padding: 20px;
+            width: 350px; background: white; display: flex; flex-direction: column; 
+            box-shadow: 4px 0 15px rgba(0,0,0,0.05); z-index: 2000; padding: 25px; 
         }
         
-        h1 { font-size: 1.2rem; color: var(--dark); margin-bottom: 20px; border-bottom: 2px solid var(--bg); padding-bottom: 10px; }
-        .label { font-size: 0.8rem; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 5px; margin-top: 15px; }
+        h1 { font-size: 1.3rem; color: var(--dark); margin-bottom: 5px; }
+        .subtitle { font-size: 0.8rem; color: #64748b; margin-bottom: 25px; }
+        .label { font-size: 0.75rem; font-weight: 600; color: #94a3b8; text-transform: uppercase; margin: 15px 0 5px 0; }
 
         select, button { 
             width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; 
-            font-size: 0.95rem; margin-bottom: 10px; transition: 0.2s;
+            font-size: 0.9rem; margin-bottom: 10px; outline: none;
         }
         
-        button { 
-            background: var(--primary); color: white; border: none; font-weight: 600; cursor: pointer;
-            margin-top: 10px;
-        }
-        button:hover { background: #1d4ed8; transform: translateY(-1px); }
+        button { background: var(--primary); color: white; border: none; font-weight: 600; cursor: pointer; }
+        button:hover { background: #1d4ed8; }
         button.secondary { background: #f1f5f9; color: var(--dark); border: 1px solid #e2e8f0; }
 
         #stats { 
-            margin-top: auto; background: var(--bg); padding: 15px; border-radius: 12px;
-            font-size: 0.9rem; line-height: 1.5; color: var(--dark);
+            margin-top: auto; background: #f8fafc; padding: 15px; border-radius: 10px;
+            font-size: 0.85rem; border: 1px solid #e2e8f0;
         }
 
         #map { flex-grow: 1; z-index: 1; }
+        .error-msg { color: #ef4444; font-size: 0.8rem; margin-top: 10px; display: none; }
 
-        /* Custom Markers */
-        .start-marker { font-size: 24px; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.2)); }
-        
         @media (max-width: 768px) {
             body { flex-direction: column; }
-            #sidebar { width: 100%; height: auto; padding: 15px; box-sizing: border-box; }
-            #map { height: 60vh; }
+            #sidebar { width: 100%; height: auto; padding: 15px; }
+            #map { flex-grow: 1; }
         }
     </style>
 </head>
 <body>
 
 <div id="sidebar">
-    <h1>📍 TourniMap Hérault</h1>
+    <h1>TourniMap Hérault</h1>
+    <div class="subtitle">Enquête MBS Junior Conseil [cite: 4]</div>
     
-    <div class="label">Zone de Mission</div>
-    <select id="zoneSelect" onchange="chargerZone()">
+    <div class="label">Zone cible</div>
+    <select id="zoneSelect" onchange="resetAndCalculate()">
         <option value="">-- Sélectionner une zone --</option>
         <script>for(let i=1; i<=13; i++) document.write(`<option value="${i}">Zone ${i}</option>`);</script>
     </select>
 
-    <div class="label">Mode de Transport</div>
+    <div class="label">Transport</div>
     <select id="modeSelect" onchange="lancerCalcul()">
-        <option value="foot">🚶 Marche & Tramway (Priorité)</option>
-        <option value="driving">🚗 Voiture (Long trajet)</option>
+        <option value="foot">🚶 Marche / Tramway (Recommandé) [cite: 18]</option>
+        <option value="driving">🚗 Voiture (Trajets longs)</option>
     </select>
 
-    <button onclick="combinerZones()" class="secondary">➕ Combiner avec zone préc.</button>
-    <button onclick="window.print()">🖨️ Exporter l'itinéraire</button>
+    <button onclick="combinerZones()" class="secondary">➕ Combiner avec zone précédente [cite: 11]</button>
+    <div id="errorBox" class="error-msg">⚠️ Impossible de tracer l'itinéraire sur certains points.</div>
     
     <div id="stats">
-        <p style="margin:0; opacity:0.6;">Sélectionnez une zone pour générer l'itinéraire optimisé.</p>
+        <i>En attente de sélection...</i>
     </div>
 </div>
 
@@ -88,7 +75,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
 
 <script>
-    const pointDepart = [43.6219, 3.8347]; // 2300 Av. des Moulins [cite: 19, 20]
+    const pointDepart = [43.6219, 3.8347]; // 2300 Av. des Moulins [cite: 20]
     const map = L.map('map', { zoomControl: false }).setView(pointDepart, 13);
     L.control.zoom({ position: 'topright' }).addTo(map);
 
@@ -96,21 +83,22 @@
         attribution: '&copy; OpenStreetMap'
     }).addTo(map);
 
-    L.marker(pointDepart, {
-        icon: L.divIcon({ html: '🏠', className: 'start-marker', iconSize: [30, 30] })
-    }).addTo(map).bindPopup("<b>Point de Départ MBS</b><br>2300 Av. des Moulins");
+    // Marqueur de départ stylisé
+    L.circleMarker(pointDepart, { radius: 10, fillColor: "#ef4444", color: "white", weight: 3, fillOpacity: 1 })
+     .addTo(map).bindPopup("<b>DÉPART</b><br>2300 Av. des Moulins [cite: 20]");
 
     let markersLayer = L.layerGroup().addTo(map);
     let routeLayer = L.layerGroup().addTo(map);
     let allData = [];
     let zonesActivees = [];
 
+    // Chargement des données [cite: 6]
     Papa.parse("commerces.csv", {
         download: true, header: true, skipEmptyLines: true,
         complete: function(results) { allData = results.data; }
     });
 
-    function chargerZone() {
+    function resetAndCalculate() {
         const val = document.getElementById('zoneSelect').value;
         if (!val) return;
         zonesActivees = [val];
@@ -128,72 +116,70 @@
     async function lancerCalcul() {
         markersLayer.clearLayers();
         routeLayer.clearLayers();
+        document.getElementById('errorBox').style.display = 'none';
         const statsDiv = document.getElementById('stats');
         statsDiv.innerHTML = "⌛ <b>Calcul de l'itinéraire...</b>";
 
         const mode = document.getElementById('modeSelect').value;
         const commerces = allData.filter(d => zonesActivees.includes(d.Zone));
 
-        // Sécurité : Filtrage des coordonnées [cite: 6, 12]
-        const pointsValides = commerces.filter(c => {
+        // Filtrage de sécurité 
+        const points = commerces.filter(c => {
             const lat = parseFloat(c.Latitude);
             const lng = parseFloat(c.Longitude);
-            return !isNaN(lat) && !isNaN(lng) && lat !== 0;
+            return !isNaN(lat) && !isNaN(lng) && lat > 40; 
         });
 
-        if (pointsValides.length === 0) {
-            statsDiv.innerHTML = "❌ Aucune donnée géographique valide trouvée.";
+        if (points.length === 0) {
+            statsDiv.innerHTML = "❌ Aucune coordonnée valide.";
             return;
         }
 
-        const taillePaquet = 10; // Limitation API gratuite OSRM
         let totalDist = 0;
         let totalDuree = 0;
-        let departActuel = pointDepart[1] + "," + pointDepart[0];
+        let coords = [pointDepart[1] + "," + pointDepart[0]];
+        
+        points.forEach(p => {
+            coords.push(p.Longitude + "," + p.Latitude);
+            L.circleMarker([p.Latitude, p.Longitude], {
+                radius: 5, fillColor: mode === 'foot' ? '#2563eb' : '#e67e22', color: "white", weight: 1, fillOpacity: 0.8
+            }).addTo(markersLayer).bindPopup(`<b>${p.Nom}</b><br>${p.Adresse}`);
+        });
 
+        // Utilisation du service ROUTE avec segmentation pour éviter les erreurs de serveur
+        // On traite par blocs de 15 points pour la stabilité
+        const chunkSize = 15;
         try {
-            for (let i = 0; i < pointsValides.length; i += taillePaquet) {
-                const paquet = pointsValides.slice(i, i + taillePaquet);
-                const coordsStr = [departActuel, ...paquet.map(p => p.Longitude + "," + p.Latitude)].join(';');
+            for (let i = 0; i < coords.length - 1; i += chunkSize - 1) {
+                const chunk = coords.slice(i, i + chunkSize);
+                const url = `https://router.project-osrm.org/route/v1/${mode}/${chunk.join(';')}?overview=full&geometries=geojson`;
                 
-                const url = `https://router.project-osrm.org/trip/v1/${mode}/${coordsStr}?source=first&destination=any&overview=full&geometries=geojson`;
                 const resp = await fetch(url);
-                const res = await resp.json();
+                const data = await resp.json();
 
-                if (res.code === 'Ok') {
-                    const trip = res.trips[0];
-                    L.geoJSON(trip.geometry, {
-                        style: { color: varProp(mode), weight: 4, opacity: 0.8 }
+                if (data.code === 'Ok') {
+                    const route = data.routes[0];
+                    L.geoJSON(route.geometry, {
+                        style: { color: mode === 'foot' ? '#2563eb' : '#e67e22', weight: 4, opacity: 0.6 }
                     }).addTo(routeLayer);
-                    
-                    totalDist += trip.distance;
-                    totalDuree += trip.duration;
-
-                    paquet.forEach(p => {
-                        L.circleMarker([p.Latitude, p.Longitude], {
-                            radius: 6, fillColor: varProp(mode), color: "#white", weight: 2, fillOpacity: 1
-                        }).addTo(markersLayer).bindPopup(`<b>${p.Nom}</b><br>${p.Adresse}`);
-                    });
-
-                    const lastWaypoint = res.waypoints[res.waypoints.length - 1].location;
-                    departActuel = lastWaypoint[0] + "," + lastWaypoint[1];
+                    totalDist += route.distance;
+                    totalDuree += route.duration;
                 }
             }
 
             statsDiv.innerHTML = `
-                <div style="color:var(--primary); font-weight:600; margin-bottom:5px;">Rapport de Tournée</div>
-                📏 Distance : <b>${(totalDist/1000).toFixed(1)} km</b><br>
-                ⏱️ Temps estimé : <b>${Math.round(totalDuree/60)} min</b><br>
-                📍 Points visités : <b>${pointsValides.length}</b>
+                <div style="font-weight:600; color:var(--dark); margin-bottom:8px;">Résumé Zone ${zonesActivees.join('+')}</div>
+                📍 <b>${points.length}</b> arrêts <br>
+                📏 <b>${(totalDist/1000).toFixed(1)} km</b> de distance<br>
+                ⏱️ <b>${Math.round(totalDuree/60)} min</b> estimées
             `;
             map.fitBounds(markersLayer.getBounds(), { padding: [50, 50] });
 
         } catch (e) {
-            statsDiv.innerHTML = "❌ Erreur réseau ou zone inaccessible.";
+            document.getElementById('errorBox').style.display = 'block';
+            statsDiv.innerHTML = "❌ Erreur de routage.";
         }
     }
-
-    function varProp(mode) { return mode === 'foot' ? '#2563eb' : '#e67e22'; }
 </script>
 </body>
 </html>
