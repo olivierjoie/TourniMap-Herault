@@ -9,64 +9,40 @@
     <style>
         :root { --primary: #2563eb; --dark: #1e293b; --bg: #f8fafc; }
         body { margin: 0; font-family: 'Inter', sans-serif; display: flex; height: 100vh; background: var(--bg); }
-        
-        #sidebar { 
-            width: 350px; background: white; display: flex; flex-direction: column; 
-            box-shadow: 4px 0 15px rgba(0,0,0,0.05); z-index: 2000; padding: 25px; 
-        }
-        
+        #sidebar { width: 350px; background: white; display: flex; flex-direction: column; box-shadow: 4px 0 15px rgba(0,0,0,0.05); z-index: 2000; padding: 25px; }
         h1 { font-size: 1.3rem; color: var(--dark); margin-bottom: 5px; }
         .subtitle { font-size: 0.8rem; color: #64748b; margin-bottom: 25px; }
         .label { font-size: 0.75rem; font-weight: 600; color: #94a3b8; text-transform: uppercase; margin: 15px 0 5px 0; }
-
-        select, button { 
-            width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; 
-            font-size: 0.9rem; margin-bottom: 10px; outline: none;
-        }
-        
+        select, button { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 0.9rem; margin-bottom: 10px; outline: none; }
         button { background: var(--primary); color: white; border: none; font-weight: 600; cursor: pointer; }
-        button:hover { background: #1d4ed8; }
         button.secondary { background: #f1f5f9; color: var(--dark); border: 1px solid #e2e8f0; }
-
-        #stats { 
-            margin-top: auto; background: #f8fafc; padding: 15px; border-radius: 10px;
-            font-size: 0.85rem; border: 1px solid #e2e8f0;
-        }
-
+        #stats { margin-top: auto; background: #f8fafc; padding: 15px; border-radius: 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; }
         #map { flex-grow: 1; z-index: 1; }
-        .error-msg { color: #ef4444; font-size: 0.8rem; margin-top: 10px; display: none; }
-
-        @media (max-width: 768px) {
-            body { flex-direction: column; }
-            #sidebar { width: 100%; height: auto; padding: 15px; }
-            #map { flex-grow: 1; }
-        }
+        .warning { color: #f59e0b; font-size: 0.75rem; margin-top: 5px; font-weight: 600; display: none; }
     </style>
 </head>
 <body>
 
 <div id="sidebar">
     <h1>TourniMap Hérault</h1>
-    <div class="subtitle">Enquête MBS Junior Conseil [cite: 4]</div>
+    <div class="subtitle">Enquête MBS Junior Conseil</div>
     
-    <div class="label">Zone cible</div>
-    <select id="zoneSelect" onchange="resetAndCalculate()">
-        <option value="">-- Sélectionner une zone --</option>
+    <div class="label">Zone de mission</div>
+    <select id="zoneSelect" onchange="resetEtCalculer()">
+        <option value="">-- Choisir une zone --</option>
         <script>for(let i=1; i<=13; i++) document.write(`<option value="${i}">Zone ${i}</option>`);</script>
     </select>
 
     <div class="label">Transport</div>
     <select id="modeSelect" onchange="lancerCalcul()">
-        <option value="foot">🚶 Marche / Tramway (Recommandé) [cite: 18]</option>
-        <option value="driving">🚗 Voiture (Trajets longs)</option>
+        <option value="foot">🚶 Marche / Tramway</option>
+        <option value="driving">🚗 Voiture</option>
     </select>
 
-    <button onclick="combinerZones()" class="secondary">➕ Combiner avec zone précédente [cite: 11]</button>
-    <div id="errorBox" class="error-msg">⚠️ Impossible de tracer l'itinéraire sur certains points.</div>
+    <button onclick="combinerZones()" class="secondary">➕ Combiner avec zone précédente</button>
+    <div id="routeWarning" class="warning">⚠️ Affichage simplifié (certains points sont inaccessibles par la route).</div>
     
-    <div id="stats">
-        <i>En attente de sélection...</i>
-    </div>
+    <div id="stats"><i>Sélectionnez une zone pour optimiser l'itinéraire.</i></div>
 </div>
 
 <div id="map"></div>
@@ -79,26 +55,22 @@
     const map = L.map('map', { zoomControl: false }).setView(pointDepart, 13);
     L.control.zoom({ position: 'topright' }).addTo(map);
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap'
-    }).addTo(map);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '© OSM' }).addTo(map);
 
-    // Marqueur de départ stylisé
-    L.circleMarker(pointDepart, { radius: 10, fillColor: "#ef4444", color: "white", weight: 3, fillOpacity: 1 })
-     .addTo(map).bindPopup("<b>DÉPART</b><br>2300 Av. des Moulins [cite: 20]");
+    L.circleMarker(pointDepart, { radius: 8, fillColor: "#ef4444", color: "white", weight: 2, fillOpacity: 1 })
+     .addTo(map).bindPopup("<b>Départ : Avenue des Moulins</b>");
 
     let markersLayer = L.layerGroup().addTo(map);
     let routeLayer = L.layerGroup().addTo(map);
     let allData = [];
     let zonesActivees = [];
 
-    // Chargement des données [cite: 6]
     Papa.parse("commerces.csv", {
         download: true, header: true, skipEmptyLines: true,
         complete: function(results) { allData = results.data; }
     });
 
-    function resetAndCalculate() {
+    function resetEtCalculer() {
         const val = document.getElementById('zoneSelect').value;
         if (!val) return;
         zonesActivees = [val];
@@ -116,69 +88,54 @@
     async function lancerCalcul() {
         markersLayer.clearLayers();
         routeLayer.clearLayers();
-        document.getElementById('errorBox').style.display = 'none';
+        document.getElementById('routeWarning').style.display = 'none';
         const statsDiv = document.getElementById('stats');
-        statsDiv.innerHTML = "⌛ <b>Calcul de l'itinéraire...</b>";
+        statsDiv.innerHTML = "⌛ <b>Calcul en cours...</b>";
 
         const mode = document.getElementById('modeSelect').value;
-        const commerces = allData.filter(d => zonesActivees.includes(d.Zone));
-
-        // Filtrage de sécurité 
-        const points = commerces.filter(c => {
-            const lat = parseFloat(c.Latitude);
-            const lng = parseFloat(c.Longitude);
-            return !isNaN(lat) && !isNaN(lng) && lat > 40; 
-        });
+        const points = allData.filter(d => zonesActivees.includes(d.Zone))
+                               .filter(c => !isNaN(parseFloat(c.Latitude)) && parseFloat(c.Latitude) > 40);
 
         if (points.length === 0) {
-            statsDiv.innerHTML = "❌ Aucune coordonnée valide.";
+            statsDiv.innerHTML = "❌ Aucune donnée pour cette zone.";
             return;
         }
 
-        let totalDist = 0;
-        let totalDuree = 0;
-        let coords = [pointDepart[1] + "," + pointDepart[0]];
-        
+        // Créer les marqueurs
         points.forEach(p => {
-            coords.push(p.Longitude + "," + p.Latitude);
-            L.circleMarker([p.Latitude, p.Longitude], {
-                radius: 5, fillColor: mode === 'foot' ? '#2563eb' : '#e67e22', color: "white", weight: 1, fillOpacity: 0.8
-            }).addTo(markersLayer).bindPopup(`<b>${p.Nom}</b><br>${p.Adresse}`);
+            L.circleMarker([p.Latitude, p.Longitude], { radius: 5, fillColor: "#2563eb", color: "white", weight: 1, fillOpacity: 0.8 })
+             .addTo(markersLayer).bindPopup(`<b>${p.Nom}</b><br>${p.Adresse}`);
         });
 
-        // Utilisation du service ROUTE avec segmentation pour éviter les erreurs de serveur
-        // On traite par blocs de 15 points pour la stabilité
-        const chunkSize = 15;
+        // Calcul par tronçons de 10 points (limite API gratuite)
+        let coords = [pointDepart[1] + "," + pointDepart[0]];
+        points.forEach(p => coords.push(p.Longitude + "," + p.Latitude));
+
         try {
-            for (let i = 0; i < coords.length - 1; i += chunkSize - 1) {
-                const chunk = coords.slice(i, i + chunkSize);
+            for (let i = 0; i < coords.length - 1; i += 9) {
+                const chunk = coords.slice(i, i + 10);
                 const url = `https://router.project-osrm.org/route/v1/${mode}/${chunk.join(';')}?overview=full&geometries=geojson`;
                 
                 const resp = await fetch(url);
                 const data = await resp.json();
 
                 if (data.code === 'Ok') {
-                    const route = data.routes[0];
-                    L.geoJSON(route.geometry, {
-                        style: { color: mode === 'foot' ? '#2563eb' : '#e67e22', weight: 4, opacity: 0.6 }
-                    }).addTo(routeLayer);
-                    totalDist += route.distance;
-                    totalDuree += route.duration;
+                    L.geoJSON(data.routes[0].geometry, { style: { color: '#2563eb', weight: 4, opacity: 0.5 } }).addTo(routeLayer);
+                } else {
+                    // Si OSRM échoue sur un tronçon, on trace une ligne droite (Mode Secours)
+                    throw new Error("Route impossible");
                 }
             }
-
-            statsDiv.innerHTML = `
-                <div style="font-weight:600; color:var(--dark); margin-bottom:8px;">Résumé Zone ${zonesActivees.join('+')}</div>
-                📍 <b>${points.length}</b> arrêts <br>
-                📏 <b>${(totalDist/1000).toFixed(1)} km</b> de distance<br>
-                ⏱️ <b>${Math.round(totalDuree/60)} min</b> estimées
-            `;
-            map.fitBounds(markersLayer.getBounds(), { padding: [50, 50] });
-
+            statsDiv.innerHTML = `✅ <b>Zone ${zonesActivees.join('+')} prête</b><br>📍 ${points.length} commerces à visiter.`;
         } catch (e) {
-            document.getElementById('errorBox').style.display = 'block';
-            statsDiv.innerHTML = "❌ Erreur de routage.";
+            // MODE SECOURS : Lignes directes si l'API échoue
+            document.getElementById('routeWarning').style.display = 'block';
+            const polyline = [pointDepart, ...points.map(p => [p.Latitude, p.Longitude])];
+            L.polyline(polyline, {color: '#94a3b8', weight: 2, dashArray: '5, 10'}).addTo(routeLayer);
+            statsDiv.innerHTML = `⚠️ <b>Itinéraire simplifié</b><br>📍 ${points.length} commerces (calcul réel impossible).`;
         }
+        
+        map.fitBounds(markersLayer.getBounds(), { padding: [50, 50] });
     }
 </script>
 </body>
