@@ -6,27 +6,35 @@
     <title>TourniMap Hérault - Enquête MBS</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { margin: 0; font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; }
+        body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; height: 100vh; }
         #controls { padding: 15px; background: #2c3e50; color: white; z-index: 1000; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
         #map { flex-grow: 1; width: 100%; }
-        select, button { padding: 8px; margin: 5px; border-radius: 4px; border: none; }
-        .stats-box { margin-top: 10px; font-size: 0.9em; background: rgba(255,255,255,0.1); padding: 10px; border-radius: 4px; }
-        .legend { background: white; padding: 10px; line-height: 1.5em; border-radius: 5px; box-shadow: 0 0 15px rgba(0,0,0,0.2); }
+        select, button { padding: 8px; margin: 5px; border-radius: 4px; border: 1px solid #ccc; cursor: pointer; }
+        button { background: #3498db; color: white; font-weight: bold; }
+        button:hover { background: #2980b9; }
+        .stats-box { margin-top: 10px; font-size: 0.9em; background: rgba(255,255,255,0.1); padding: 10px; border-radius: 4px; border-left: 4px solid #3498db; }
+        .start-icon { font-size: 20px; text-align: center; }
     </style>
 </head>
 <body>
 
 <div id="controls">
-    <strong>Zone de mission :</strong>
+    <strong>Mission MBS :</strong>
     <select id="zoneSelect" onchange="chargerZone()">
         <option value="">-- Choisir une zone --</option>
         <script>
             for(let i=1; i<=13; i++) document.write(`<option value="${i}">Zone ${i}</option>`);
         </script>
     </select>
-    <button onclick="combinerZones()">Combiner avec Zone précédente</button>
+
+    <select id="modeSelect" onchange="chargerZone()">
+        <option value="foot">🚶 Marche / Tram</option>
+        <option value="driving">🚗 Voiture (Long trajet)</option>
+    </select>
+
+    <button onclick="combinerZones()">➕ Combiner avec Zone précédente</button>
     
-    <div id="stats" class="stats-box">Sélectionnez une zone pour voir les détails (Marche/Tram prioritaires).</div>
+    <div id="stats" class="stats-box">Sélectionnez une zone. L'itinéraire sera optimisé automatiquement.</div>
 </div>
 
 <div id="map"></div>
@@ -35,22 +43,28 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
 
 <script>
-    const pointDepart = [43.6219, 3.8347]; // 2300 Av. des Moulins [cite: 19, 20]
+    // Configuration de base
+    const pointDepart = [43.6219, 3.8347]; // 2300 Av. des Moulins 
     const map = L.map('map').setView(pointDepart, 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
 
-    // Marqueur de départ
-    L.marker(pointDepart, {icon: L.divIcon({className: 'start-icon', html: '🏠', iconSize: [20, 20]})})
-     .addTo(map).bindPopup("<b>Point de départ imposé</b><br>2300 Av. des Moulins");
+    // Icône de départ
+    L.marker(pointDepart, {
+        icon: L.divIcon({className: 'start-icon', html: '🏠', iconSize: [25, 25]})
+    }).addTo(map).bindPopup("<b>Point de départ imposé</b><br>2300 Av. des Moulins");
 
     let markersLayer = L.layerGroup().addTo(map);
     let routeLayer = L.layerGroup().addTo(map);
     let allData = [];
+    let zonesSelectionnees = [];
 
-    // Chargement du fichier CSV exporté de Google Sheets
+    // Chargement du CSV [cite: 6]
     Papa.parse("commerces.csv", {
         download: true,
         header: true,
+        skipEmptyLines: true,
         complete: function(results) {
             allData = results.data;
             console.log("Données chargées : " + allData.length + " commerces");
@@ -60,49 +74,80 @@
     async function chargerZone() {
         const zoneId = document.getElementById('zoneSelect').value;
         if (!zoneId) return;
-
-        markersLayer.clearLayers();
-        routeLayer.clearLayers();
-
-        const commercesZone = allData.filter(d => d.Zone == zoneId);
-        if (commercesZone.length === 0) return;
-
-        // Préparation des coordonnées pour OSRM (Départ + points de la zone)
-        let coords = [pointDepart[1] + "," + pointDepart[0]]; 
-        commercesZone.forEach(c => {
-            if(c.Latitude && c.Longitude) {
-                coords.push(c.Longitude + "," + c.Latitude);
-                L.marker([c.Latitude, c.Longitude]).addTo(markersLayer).bindPopup(`<b>${c.Nom}</b><br>${c.Adresse}`);
-            }
-        });
-
-        // Appel à l'API OSRM (Routage réel OpenStreetMap) [cite: 12, 15]
-        const url = `https://router.project-osrm.org/route/v1/foot/${coords.join(';')}?overview=full&geometries=geojson`;
         
-        try {
-            const response = await fetch(url);
-            const data = await response.json();
-            const route = data.routes[0];
-
-            L.geoJSON(route.geometry, {style: {color: 'blue', weight: 5}}).addTo(routeLayer);
-            
-            // Mise à jour des stats 
-            const distanceKm = (route.distance / 1000).toFixed(2);
-            const dureeMin = Math.round(route.duration / 60);
-            document.getElementById('stats').innerHTML = `
-                <strong>Stats Zone ${zoneId} :</strong><br>
-                📏 Distance : ${distanceKm} km | ⏱️ Durée est. : ${dureeMin} min | 📍 Arrêts : ${commercesZone.length}
-            `;
-            
-            map.fitBounds(markersLayer.getBounds());
-        } catch (e) {
-            console.error("Erreur de routage", e);
-        }
+        zonesSelectionnees = [zoneId]; // Réinitialise à une seule zone
+        calculerItineraireOptimise();
     }
 
     function combinerZones() {
-        alert("Fonction de combinaison activée. Les itinéraires des deux zones sélectionnées seront fusionnés.");
-        // Logique de fusion simplifiée pour l'affichage
+        const zoneId = document.getElementById('zoneSelect').value;
+        if (!zoneId) return;
+        
+        const zonePrec = parseInt(zoneId) - 1;
+        if (zonePrec > 0 && !zonesSelectionnees.includes(zonePrec.toString())) {
+            zonesSelectionnees.push(zonePrec.toString());
+            calculerItineraireOptimise();
+        } else {
+            alert("Pas de zone précédente à combiner ou déjà ajoutée.");
+        }
+    }
+
+    async function calculerItineraireOptimise() {
+        markersLayer.clearLayers();
+        routeLayer.clearLayers();
+        const mode = document.getElementById('modeSelect').value;
+
+        // Filtrer les commerces des zones sélectionnées [cite: 9, 11]
+        const commercesMission = allData.filter(d => zonesSelectionnees.includes(d.Zone));
+        
+        if (commercesMission.length === 0) return;
+
+        // Préparation des coordonnées (Départ en premier) [cite: 20]
+        let coords = [pointDepart[1] + "," + pointDepart[0]]; 
+        
+        commercesMission.forEach(c => {
+            if(c.Latitude && c.Longitude) {
+                coords.push(c.Longitude + "," + c.Latitude);
+                L.marker([c.Latitude, c.Longitude])
+                 .addTo(markersLayer)
+                 .bindPopup(`<b>${c.Nom}</b><br>${c.Adresse}<br>Zone: ${c.Zone}`);
+            }
+        });
+
+        // Utilisation de l'API TRIP pour l'optimisation (TSP solver) [cite: 12, 15]
+        // source=first impose le départ au point 0 (Av. des Moulins)
+        const url = `https://router.project-osrm.org/trip/v1/${mode}/${coords.join(';')}?source=first&destination=any&overview=full&geometries=geojson`;
+        
+        try {
+            document.getElementById('stats').innerHTML = "⏳ Calcul de l'itinéraire optimisé...";
+            const response = await fetch(url);
+            const data = await response.json();
+
+            if (data.code !== 'Ok') throw new Error(data.message);
+
+            const trip = data.trips[0];
+            
+            // Affichage de la route
+            L.geoJSON(trip.geometry, {
+                style: { color: mode === 'foot' ? '#3498db' : '#e67e22', weight: 5, opacity: 0.7 }
+            }).addTo(routeLayer);
+            
+            // Stats 
+            const distanceKm = (trip.distance / 1000).toFixed(2);
+            const dureeMin = Math.round(trip.duration / 60);
+            
+            document.getElementById('stats').innerHTML = `
+                <strong>Zones : ${zonesSelectionnees.join(' & ')}</strong><br>
+                📏 Distance : ${distanceKm} km | ⏱️ Durée est. : ${dureeMin} min<br>
+                📍 Nombre de commerces : ${commercesMission.length} | 🚶 Mode : ${mode === 'foot' ? 'Piéton/Tram' : 'Voiture'}
+            `;
+            
+            map.fitBounds(markersLayer.getBounds(), {padding: [50, 50]});
+
+        } catch (e) {
+            console.error("Erreur OSRM:", e);
+            document.getElementById('stats').innerHTML = "❌ Erreur de calcul. Trop de points ou zone inaccessible.";
+        }
     }
 </script>
 </body>
