@@ -3,35 +3,83 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TourniMap Hérault - Optimisé</title>
+    <title>TourniMap Hérault | MBS Junior Conseil</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
-        body { margin: 0; font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; }
-        #controls { padding: 15px; background: #2c3e50; color: white; z-index: 1000; }
-        #map { flex-grow: 1; width: 100%; }
-        select, button { padding: 8px; margin: 5px; border-radius: 4px; border: none; cursor: pointer; }
-        button { background: #3498db; color: white; font-weight: bold; }
-        .stats-box { margin-top: 10px; font-size: 0.9em; background: rgba(255,255,255,0.1); padding: 10px; border-radius: 4px; border-left: 4px solid #f1c40f; }
-        .error { border-left: 4px solid #e74c3c; color: #ff7675; }
+        :root {
+            --primary: #2563eb;
+            --dark: #1e293b;
+            --bg: #f8fafc;
+        }
+        body { margin: 0; font-family: 'Inter', sans-serif; display: flex; height: 100vh; background: var(--bg); overflow: hidden; }
+        
+        /* Sidebar Style */
+        #sidebar { 
+            width: 350px; 
+            background: white; 
+            display: flex; 
+            flex-direction: column; 
+            box-shadow: 4px 0 15px rgba(0,0,0,0.05);
+            z-index: 2000;
+            padding: 20px;
+        }
+        
+        h1 { font-size: 1.2rem; color: var(--dark); margin-bottom: 20px; border-bottom: 2px solid var(--bg); padding-bottom: 10px; }
+        .label { font-size: 0.8rem; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 5px; margin-top: 15px; }
+
+        select, button { 
+            width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; 
+            font-size: 0.95rem; margin-bottom: 10px; transition: 0.2s;
+        }
+        
+        button { 
+            background: var(--primary); color: white; border: none; font-weight: 600; cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover { background: #1d4ed8; transform: translateY(-1px); }
+        button.secondary { background: #f1f5f9; color: var(--dark); border: 1px solid #e2e8f0; }
+
+        #stats { 
+            margin-top: auto; background: var(--bg); padding: 15px; border-radius: 12px;
+            font-size: 0.9rem; line-height: 1.5; color: var(--dark);
+        }
+
+        #map { flex-grow: 1; z-index: 1; }
+
+        /* Custom Markers */
+        .start-marker { font-size: 24px; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.2)); }
+        
+        @media (max-width: 768px) {
+            body { flex-direction: column; }
+            #sidebar { width: 100%; height: auto; padding: 15px; box-sizing: border-box; }
+            #map { height: 60vh; }
+        }
     </style>
 </head>
 <body>
 
-<div id="controls">
-    <strong>Mission MBS :</strong>
+<div id="sidebar">
+    <h1>📍 TourniMap Hérault</h1>
+    
+    <div class="label">Zone de Mission</div>
     <select id="zoneSelect" onchange="chargerZone()">
-        <option value="">-- Choisir une zone --</option>
+        <option value="">-- Sélectionner une zone --</option>
         <script>for(let i=1; i<=13; i++) document.write(`<option value="${i}">Zone ${i}</option>`);</script>
     </select>
 
-    <select id="modeSelect" onchange="chargerZone()">
-        <option value="foot">🚶 Marche / Tram</option>
-        <option value="driving">🚗 Voiture (Trajets longs)</option>
+    <div class="label">Mode de Transport</div>
+    <select id="modeSelect" onchange="lancerCalcul()">
+        <option value="foot">🚶 Marche & Tramway (Priorité)</option>
+        <option value="driving">🚗 Voiture (Long trajet)</option>
     </select>
 
-    <button onclick="combinerZones()">➕ Combiner</button>
+    <button onclick="combinerZones()" class="secondary">➕ Combiner avec zone préc.</button>
+    <button onclick="window.print()">🖨️ Exporter l'itinéraire</button>
     
-    <div id="stats" class="stats-box">En attente de sélection...</div>
+    <div id="stats">
+        <p style="margin:0; opacity:0.6;">Sélectionnez une zone pour générer l'itinéraire optimisé.</p>
+    </div>
 </div>
 
 <div id="map"></div>
@@ -41,11 +89,16 @@
 
 <script>
     const pointDepart = [43.6219, 3.8347]; // 2300 Av. des Moulins [cite: 19, 20]
-    const map = L.map('map').setView(pointDepart, 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    const map = L.map('map', { zoomControl: false }).setView(pointDepart, 13);
+    L.control.zoom({ position: 'topright' }).addTo(map);
 
-    L.marker(pointDepart, {icon: L.divIcon({html: '🏠', className: 'start-icon', iconSize: [20,20]})})
-     .addTo(map).bindPopup("Point de départ : Av. des Moulins");
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    L.marker(pointDepart, {
+        icon: L.divIcon({ html: '🏠', className: 'start-marker', iconSize: [30, 30] })
+    }).addTo(map).bindPopup("<b>Point de Départ MBS</b><br>2300 Av. des Moulins");
 
     let markersLayer = L.layerGroup().addTo(map);
     let routeLayer = L.layerGroup().addTo(map);
@@ -53,25 +106,21 @@
     let zonesActivees = [];
 
     Papa.parse("commerces.csv", {
-        download: true,
-        header: true,
-        skipEmptyLines: true,
-        complete: function(results) {
-            allData = results.data;
-        }
+        download: true, header: true, skipEmptyLines: true,
+        complete: function(results) { allData = results.data; }
     });
 
     function chargerZone() {
-        const zoneId = document.getElementById('zoneSelect').value;
-        if (!zoneId) return;
-        zonesActivees = [zoneId];
+        const val = document.getElementById('zoneSelect').value;
+        if (!val) return;
+        zonesActivees = [val];
         lancerCalcul();
     }
 
     function combinerZones() {
-        const zoneId = document.getElementById('zoneSelect').value;
-        if (!zoneId || zoneId <= 1) return;
-        const prec = (parseInt(zoneId) - 1).toString();
+        const val = document.getElementById('zoneSelect').value;
+        if (!val || val <= 1) return;
+        const prec = (parseInt(val) - 1).toString();
         if (!zonesActivees.includes(prec)) zonesActivees.push(prec);
         lancerCalcul();
     }
@@ -79,26 +128,25 @@
     async function lancerCalcul() {
         markersLayer.clearLayers();
         routeLayer.clearLayers();
-        document.getElementById('stats').classList.remove('error');
-        document.getElementById('stats').innerHTML = "⏳ Calcul des tronçons optimisés...";
+        const statsDiv = document.getElementById('stats');
+        statsDiv.innerHTML = "⌛ <b>Calcul de l'itinéraire...</b>";
 
         const mode = document.getElementById('modeSelect').value;
         const commerces = allData.filter(d => zonesActivees.includes(d.Zone));
 
-        // --- SÉCURITÉ COORDONNÉES ---
+        // Sécurité : Filtrage des coordonnées [cite: 6, 12]
         const pointsValides = commerces.filter(c => {
             const lat = parseFloat(c.Latitude);
             const lng = parseFloat(c.Longitude);
-            return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
+            return !isNaN(lat) && !isNaN(lng) && lat !== 0;
         });
 
         if (pointsValides.length === 0) {
-            document.getElementById('stats').innerHTML = "❌ Aucune donnée valide en Zone " + zonesActivees.join(',');
+            statsDiv.innerHTML = "❌ Aucune donnée géographique valide trouvée.";
             return;
         }
 
-        // Découpage par paquets de 10 pour l'API OSRM Trip [cite: 15]
-        const taillePaquet = 10;
+        const taillePaquet = 10; // Limitation API gratuite OSRM
         let totalDist = 0;
         let totalDuree = 0;
         let departActuel = pointDepart[1] + "," + pointDepart[0];
@@ -109,40 +157,43 @@
                 const coordsStr = [departActuel, ...paquet.map(p => p.Longitude + "," + p.Latitude)].join(';');
                 
                 const url = `https://router.project-osrm.org/trip/v1/${mode}/${coordsStr}?source=first&destination=any&overview=full&geometries=geojson`;
-                
                 const resp = await fetch(url);
                 const res = await resp.json();
 
                 if (res.code === 'Ok') {
                     const trip = res.trips[0];
-                    L.geoJSON(trip.geometry, {style: {color: mode === 'foot' ? '#3498db' : '#e67e22', weight: 5}}).addTo(routeLayer);
+                    L.geoJSON(trip.geometry, {
+                        style: { color: varProp(mode), weight: 4, opacity: 0.8 }
+                    }).addTo(routeLayer);
                     
                     totalDist += trip.distance;
                     totalDuree += trip.duration;
 
-                    // Ajouter les marqueurs
                     paquet.forEach(p => {
-                        L.marker([p.Latitude, p.Longitude]).addTo(markersLayer).bindPopup(`<b>${p.Nom}</b><br>${p.Adresse}`);
+                        L.circleMarker([p.Latitude, p.Longitude], {
+                            radius: 6, fillColor: varProp(mode), color: "#white", weight: 2, fillOpacity: 1
+                        }).addTo(markersLayer).bindPopup(`<b>${p.Nom}</b><br>${p.Adresse}`);
                     });
 
-                    // Le dernier point du paquet devient le départ du prochain pour la continuité
-                    const lastPoint = res.waypoints[res.waypoints.length - 1].location;
-                    departActuel = lastPoint[0] + "," + lastPoint[1];
+                    const lastWaypoint = res.waypoints[res.waypoints.length - 1].location;
+                    departActuel = lastWaypoint[0] + "," + lastWaypoint[1];
                 }
             }
 
-            document.getElementById('stats').innerHTML = `
-                <strong>Zones : ${zonesActivees.join(' & ')}</strong><br>
-                📏 Dist : ${(totalDist/1000).toFixed(2)} km | ⏱️ Temps : ${Math.round(totalDuree/60)} min<br>
-                📍 ${pointsValides.length} commerces | Mode : ${mode === 'foot' ? 'Marche' : 'Voiture'}
+            statsDiv.innerHTML = `
+                <div style="color:var(--primary); font-weight:600; margin-bottom:5px;">Rapport de Tournée</div>
+                📏 Distance : <b>${(totalDist/1000).toFixed(1)} km</b><br>
+                ⏱️ Temps estimé : <b>${Math.round(totalDuree/60)} min</b><br>
+                📍 Points visités : <b>${pointsValides.length}</b>
             `;
-            map.fitBounds(markersLayer.getBounds(), {padding: [30,30]});
+            map.fitBounds(markersLayer.getBounds(), { padding: [50, 50] });
 
-        } catch (err) {
-            document.getElementById('stats').classList.add('error');
-            document.getElementById('stats').innerHTML = "❌ Erreur : Problème de connexion ou zone inaccessible à pied.";
+        } catch (e) {
+            statsDiv.innerHTML = "❌ Erreur réseau ou zone inaccessible.";
         }
     }
+
+    function varProp(mode) { return mode === 'foot' ? '#2563eb' : '#e67e22'; }
 </script>
 </body>
 </html>
