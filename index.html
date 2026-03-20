@@ -3,22 +3,59 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TourniMap Hérault | MBS Junior Conseil</title>
+    <title>TourniMap Hérault v3 | MBS Junior Conseil</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
         :root { --primary: #2563eb; --dark: #1e293b; --bg: #f8fafc; }
-        body { margin: 0; font-family: 'Inter', sans-serif; display: flex; height: 100vh; background: var(--bg); }
-        #sidebar { width: 350px; background: white; display: flex; flex-direction: column; box-shadow: 4px 0 15px rgba(0,0,0,0.05); z-index: 2000; padding: 25px; }
-        h1 { font-size: 1.3rem; color: var(--dark); margin-bottom: 5px; }
+        body { margin: 0; font-family: 'Inter', sans-serif; display: flex; height: 100vh; background: var(--bg); overflow: hidden;}
+        
+        /* Sidebar Style */
+        #sidebar { width: 350px; background: white; display: flex; flex-direction: column; box-shadow: 4px 0 15px rgba(0,0,0,0.05); z-index: 2000; padding: 25px; box-sizing: border-box; }
+        h1 { font-size: 1.3rem; color: var(--dark); margin-bottom: 5px; margin-top: 0; }
         .subtitle { font-size: 0.8rem; color: #64748b; margin-bottom: 25px; }
         .label { font-size: 0.75rem; font-weight: 600; color: #94a3b8; text-transform: uppercase; margin: 15px 0 5px 0; }
-        select, button { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 0.9rem; margin-bottom: 10px; outline: none; }
-        button { background: var(--primary); color: white; border: none; font-weight: 600; cursor: pointer; }
+        select, button { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 0.9rem; margin-bottom: 10px; outline: none; box-sizing: border-box; }
+        button { background: var(--primary); color: white; border: none; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+        button:hover { background: #1d4ed8; }
         button.secondary { background: #f1f5f9; color: var(--dark); border: 1px solid #e2e8f0; }
-        #stats { margin-top: auto; background: #f8fafc; padding: 15px; border-radius: 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; }
+        #stats { margin-top: auto; background: #f8fafc; padding: 15px; border-radius: 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; color: var(--dark); line-height: 1.5; }
         #map { flex-grow: 1; z-index: 1; }
-        .warning { color: #f59e0b; font-size: 0.75rem; margin-top: 5px; font-weight: 600; display: none; }
+        .warning { color: #f59e0b; font-size: 0.75rem; margin-top: 5px; font-weight: 600; display: none; text-align: center;}
+
+        /* --- NOUVEAU : Styles pour Marqueurs Numérotés --- */
+        .numbered-marker {
+            background-color: var(--primary);
+            color: white;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 600;
+            transition: transform 0.2s;
+        }
+        .numbered-marker:hover {
+            transform: scale(1.2);
+            background-color: #1d4ed8;
+            z-index: 1000 !important;
+        }
+        .start-marker {
+            font-size: 18px;
+            background: none;
+            border: none;
+            box-shadow: none;
+        }
+        .leaflet-popup-content-wrapper { border-radius: 8px; padding: 5px; }
+        .leaflet-popup-content b { color: var(--primary); font-size: 1.1rem; }
+
+        @media (max-width: 768px) {
+            body { flex-direction: column; }
+            #sidebar { width: 100%; height: auto; padding: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+            #map { flex-grow: 1; }
+        }
     </style>
 </head>
 <body>
@@ -27,7 +64,7 @@
     <h1>TourniMap Hérault</h1>
     <div class="subtitle">Enquête MBS Junior Conseil</div>
     
-    <div class="label">Zone de mission</div>
+    <div class="label">Zone cible</div>
     <select id="zoneSelect" onchange="resetEtCalculer()">
         <option value="">-- Choisir une zone --</option>
         <script>for(let i=1; i<=13; i++) document.write(`<option value="${i}">Zone ${i}</option>`);</script>
@@ -35,14 +72,14 @@
 
     <div class="label">Transport</div>
     <select id="modeSelect" onchange="lancerCalcul()">
-        <option value="foot">🚶 Marche / Tramway</option>
-        <option value="driving">🚗 Voiture</option>
+        <option value="foot">🚶 Marche / Tramway (Priorité)</option>
+        <option value="driving">🚗 Voiture (Trajets longs)</option>
     </select>
 
     <button onclick="combinerZones()" class="secondary">➕ Combiner avec zone précédente</button>
-    <div id="routeWarning" class="warning">⚠️ Affichage simplifié (certains points sont inaccessibles par la route).</div>
+    <div id="routeWarning" class="warning">⚠️ Itinéraire simplifié (certains points sont inaccessibles par la route).</div>
     
-    <div id="stats"><i>Sélectionnez une zone pour optimiser l'itinéraire.</i></div>
+    <div id="stats"><i>Sélectionnez une zone pour générer l'ordre de passage optimisé.</i></div>
 </div>
 
 <div id="map"></div>
@@ -51,92 +88,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
 
 <script>
-    const pointDepart = [43.6219, 3.8347]; // 2300 Av. des Moulins [cite: 20]
-    const map = L.map('map', { zoomControl: false }).setView(pointDepart, 13);
+    const pointDepartCoords = [43.6219, 3.8347]; // 2300 Av. des Moulins
+    const map = L.map('map', { zoomControl: false }).setView(pointDepartCoords, 13);
     L.control.zoom({ position: 'topright' }).addTo(map);
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '© OSM' }).addTo(map);
-
-    L.circleMarker(pointDepart, { radius: 8, fillColor: "#ef4444", color: "white", weight: 2, fillOpacity: 1 })
-     .addTo(map).bindPopup("<b>Départ : Avenue des Moulins</b>");
-
-    let markersLayer = L.layerGroup().addTo(map);
-    let routeLayer = L.layerGroup().addTo(map);
-    let allData = [];
-    let zonesActivees = [];
-
-    Papa.parse("commerces.csv", {
-        download: true, header: true, skipEmptyLines: true,
-        complete: function(results) { allData = results.data; }
-    });
-
-    function resetEtCalculer() {
-        const val = document.getElementById('zoneSelect').value;
-        if (!val) return;
-        zonesActivees = [val];
-        lancerCalcul();
-    }
-
-    function combinerZones() {
-        const val = document.getElementById('zoneSelect').value;
-        if (!val || val <= 1) return;
-        const prec = (parseInt(val) - 1).toString();
-        if (!zonesActivees.includes(prec)) zonesActivees.push(prec);
-        lancerCalcul();
-    }
-
-    async function lancerCalcul() {
-        markersLayer.clearLayers();
-        routeLayer.clearLayers();
-        document.getElementById('routeWarning').style.display = 'none';
-        const statsDiv = document.getElementById('stats');
-        statsDiv.innerHTML = "⌛ <b>Calcul en cours...</b>";
-
-        const mode = document.getElementById('modeSelect').value;
-        const points = allData.filter(d => zonesActivees.includes(d.Zone))
-                               .filter(c => !isNaN(parseFloat(c.Latitude)) && parseFloat(c.Latitude) > 40);
-
-        if (points.length === 0) {
-            statsDiv.innerHTML = "❌ Aucune donnée pour cette zone.";
-            return;
-        }
-
-        // Créer les marqueurs
-        points.forEach(p => {
-            L.circleMarker([p.Latitude, p.Longitude], { radius: 5, fillColor: "#2563eb", color: "white", weight: 1, fillOpacity: 0.8 })
-             .addTo(markersLayer).bindPopup(`<b>${p.Nom}</b><br>${p.Adresse}`);
-        });
-
-        // Calcul par tronçons de 10 points (limite API gratuite)
-        let coords = [pointDepart[1] + "," + pointDepart[0]];
-        points.forEach(p => coords.push(p.Longitude + "," + p.Latitude));
-
-        try {
-            for (let i = 0; i < coords.length - 1; i += 9) {
-                const chunk = coords.slice(i, i + 10);
-                const url = `https://router.project-osrm.org/route/v1/${mode}/${chunk.join(';')}?overview=full&geometries=geojson`;
-                
-                const resp = await fetch(url);
-                const data = await resp.json();
-
-                if (data.code === 'Ok') {
-                    L.geoJSON(data.routes[0].geometry, { style: { color: '#2563eb', weight: 4, opacity: 0.5 } }).addTo(routeLayer);
-                } else {
-                    // Si OSRM échoue sur un tronçon, on trace une ligne droite (Mode Secours)
-                    throw new Error("Route impossible");
-                }
-            }
-            statsDiv.innerHTML = `✅ <b>Zone ${zonesActivees.join('+')} prête</b><br>📍 ${points.length} commerces à visiter.`;
-        } catch (e) {
-            // MODE SECOURS : Lignes directes si l'API échoue
-            document.getElementById('routeWarning').style.display = 'block';
-            const polyline = [pointDepart, ...points.map(p => [p.Latitude, p.Longitude])];
-            L.polyline(polyline, {color: '#94a3b8', weight: 2, dashArray: '5, 10'}).addTo(routeLayer);
-            statsDiv.innerHTML = `⚠️ <b>Itinéraire simplifié</b><br>📍 ${points.length} commerces (calcul réel impossible).`;
-        }
-        
-        map.fitBounds(markersLayer.getBounds(), { padding: [50, 50] });
-    }
-</script>
-</body>
-</html>
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '©
