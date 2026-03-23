@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TourniMap Hérault | MBS Junior Conseil</title>
+    <title>TourniMap Hérault | Optimisation TSP</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
@@ -18,41 +18,16 @@
         button.secondary { background: #f1f5f9; color: var(--dark); border: 1px solid #e2e8f0; }
         #stats { margin-top: auto; background: #f8fafc; padding: 15px; border-radius: 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; }
         #map { flex-grow: 1; z-index: 1; }
-
-        .numbered-marker {
-            background-color: var(--primary);
-            color: white;
-            border-radius: 50%;
-            border: 2px solid white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 11px;
-            font-weight: 600;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-        }
-
-        .start-marker {
-            background-color: #ef4444 !important; /* Rouge pour le départ */
-            font-size: 14px !important;
-        }
-
-        .leaflet-tooltip-own {
-            background-color: var(--dark);
-            color: white;
-            border: none;
-            border-radius: 4px;
-            padding: 5px 10px;
-            font-weight: 600;
-            font-size: 0.8rem;
-        }
+        .numbered-marker { background-color: var(--primary); color: white; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; }
+        .start-marker { background-color: #ef4444 !important; font-size: 14px !important; }
+        .leaflet-tooltip-own { background-color: var(--dark); color: white; border: none; border-radius: 4px; padding: 5px 10px; font-weight: 600; font-size: 0.8rem; }
     </style>
 </head>
 <body>
 
 <div id="sidebar">
     <h1>TourniMap Hérault</h1>
-    <div class="subtitle">Enquête MBS Junior Conseil</div>
+    <div class="subtitle">Optimisation par Graphes (TSP)</div>
     
     <div class="label">Zone de mission</div>
     <select id="zoneSelect" onchange="resetEtCalculer()">
@@ -67,7 +42,7 @@
     </select>
 
     <button onclick="combinerZones()" class="secondary">➕ Combiner Zone</button>
-    <div id="stats"><i>Sélectionnez une zone pour voir l'itinéraire.</i></div>
+    <div id="stats"><i>Sélectionnez une zone pour optimiser le parcours.</i></div>
 </div>
 
 <div id="map"></div>
@@ -76,10 +51,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
 
 <script>
-    const pointDepartCoords = [43.6219, 3.8347]; // Av. des Moulins
+    const pointDepartCoords = [43.6219, 3.8347];
     const map = L.map('map', { zoomControl: false }).setView(pointDepartCoords, 13);
     L.control.zoom({ position: 'topright' }).addTo(map);
-
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
 
     let markersLayer = L.layerGroup().addTo(map);
@@ -89,10 +63,37 @@
 
     Papa.parse("commerces.csv", {
         download: true, header: true, skipEmptyLines: true,
-        complete: function(results) { 
-            allData = results.data;
-        }
+        complete: function(results) { allData = results.data; }
     });
+
+    // --- ALGORITHME DU PLUS PROCHE VOISIN (TSP) ---
+    function ordonnerPointsTSP(depart, points) {
+        let pointsRestants = [...points];
+        let parcoursOrdonne = [];
+        let positionActuelle = { lat: depart[0], lng: depart[1] };
+
+        while (pointsRestants.length > 0) {
+            let plusProcheIdx = 0;
+            let distanceMin = Infinity;
+
+            for (let i = 0; i < pointsRestants.length; i++) {
+                let d = calculerDistanceManhattan(positionActuelle, pointsRestants[i]);
+                if (d < distanceMin) {
+                    distanceMin = d;
+                    plusProcheIdx = i;
+                }
+            }
+
+            let pointChoisi = pointsRestants.splice(plusProcheIdx, 1)[0];
+            parcoursOrdonne.push(pointChoisi);
+            positionActuelle = { lat: parseFloat(pointChoisi.Latitude), lng: parseFloat(pointChoisi.Longitude) };
+        }
+        return parcoursOrdonne;
+    }
+
+    function calculerDistanceManhattan(p1, p2) {
+        return Math.sqrt(Math.pow(p1.lat - p2.Latitude, 2) + Math.pow(p1.lng - p2.Longitude, 2));
+    }
 
     function resetEtCalculer() {
         const val = document.getElementById('zoneSelect').value;
@@ -113,45 +114,38 @@
         markersLayer.clearLayers();
         routeLayer.clearLayers();
         const statsDiv = document.getElementById('stats');
-        statsDiv.innerHTML = "⌛ Calcul de la tournée...";
-
-        // 1. Re-créer le point de départ (Marqueur Rouge 🏠)
-        const startIcon = L.divIcon({
-            className: 'numbered-marker start-marker',
-            html: `🏠`,
-            iconSize: [26, 26]
-        });
-        L.marker(pointDepartCoords, { icon: startIcon }).addTo(markersLayer).bindPopup("<b>DÉPART : Avenue des Moulins</b>");
+        statsDiv.innerHTML = "⌛ Optimisation de l'ordre de passage...";
 
         const mode = document.getElementById('modeSelect').value;
-        const points = allData.filter(d => zonesActivees.includes(d.Zone))
-                               .filter(c => c.Latitude && c.Longitude);
+        let pointsBruts = allData.filter(d => zonesActivees.includes(d.Zone))
+                                 .filter(c => c.Latitude && c.Longitude);
 
-        if (points.length === 0) {
+        if (pointsBruts.length === 0) {
             statsDiv.innerHTML = "Aucune donnée.";
             return;
         }
 
-        // 2. Ajouter les commerces numérotés
-        points.forEach((p, index) => {
-            const num = index + 1;
-            const icon = L.divIcon({
-                className: 'numbered-marker',
-                html: `<span>${num}</span>`,
-                iconSize: [22, 22]
-            });
+        // APPLICATION DE L'ALGORITHME TSP
+        const pointsOptimises = ordonnerPointsTSP(pointDepartCoords, pointsBruts);
 
-            const nomCommerce = p["NOM DANS LISTING"] || "Sans nom";
+        // Ajout du départ
+        L.marker(pointDepartCoords, { icon: L.divIcon({ className: 'numbered-marker start-marker', html: `🏠`, iconSize: [26, 26] }) }).addTo(markersLayer);
+
+        // Ajout des points optimisés
+        pointsOptimises.forEach((p, index) => {
+            const num = index + 1;
+            const icon = L.divIcon({ className: 'numbered-marker', html: `<span>${num}</span>`, iconSize: [22, 22] });
+            const nom = p["NOM DANS LISTING"] || "Commerce";
 
             L.marker([p.Latitude, p.Longitude], { icon: icon })
              .addTo(markersLayer)
-             .bindPopup(`<b>${nomCommerce}</b><br>${p.ADRESSE}`)
-             .bindTooltip(nomCommerce, { permanent: false, direction: 'top', className: 'leaflet-tooltip-own', offset: [0, -10] });
+             .bindPopup(`<b>${nom}</b><br>${p.ADRESSE}`)
+             .bindTooltip(`${num}. ${nom}`, { direction: 'top', className: 'leaflet-tooltip-own', offset: [0, -10] });
         });
 
-        // 3. Tracer l'itinéraire
+        // Tracé de l'itinéraire
         let coords = [pointDepartCoords[1] + "," + pointDepartCoords[0]];
-        points.forEach(p => coords.push(p.Longitude + "," + p.Latitude));
+        pointsOptimises.forEach(p => coords.push(p.Longitude + "," + p.Latitude));
 
         try {
             for (let i = 0; i < coords.length - 1; i += 9) {
@@ -163,10 +157,10 @@
                     L.geoJSON(d.routes[0].geometry, { style: { color: '#2563eb', weight: 4, opacity: 0.5 } }).addTo(routeLayer);
                 }
             }
-            statsDiv.innerHTML = `✅ Itinéraire prêt<br>📍 ${points.length} arrêts + Départ`;
+            statsDiv.innerHTML = `✅ Itinéraire optimisé<br>📍 ${pointsOptimises.length} étapes logiques.`;
             map.fitBounds(markersLayer.getBounds(), { padding: [40, 40] });
         } catch (e) {
-            statsDiv.innerHTML = "⚠️ Erreur itinéraire";
+            statsDiv.innerHTML = "⚠️ Erreur réseau.";
         }
     }
 </script>
