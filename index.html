@@ -2,16 +2,23 @@ async function lancerCalcul() {
         markersLayer.clearLayers();
         routeLayer.clearLayers();
         segmentsTime = []; 
-        let cumulDist = 0; // On initialise les compteurs à 0
+        
+        // Initialisation propre des compteurs
+        let cumulDist = 0; 
         let cumulDuree = 0;
         
         const mode = document.getElementById('modeSelect').value;
+        const statsDiv = document.getElementById('stats');
+        
         let pointsBruts = allData.filter(d => zonesActivees.includes(d.Zone)).filter(c => c.Latitude && c.Longitude);
-        if (pointsBruts.length === 0) return;
+        if (pointsBruts.length === 0) {
+            statsDiv.innerHTML = "Aucune donnée trouvée.";
+            return;
+        }
 
         pointsDeLaTournee = ordonnerPointsTSP(pointDepartCoords, pointsBruts);
 
-        // Ajout des marqueurs (Départ + Commerces)
+        // Affichage des marqueurs (Départ + Commerces)
         L.marker(pointDepartCoords, { icon: L.divIcon({ className: 'numbered-marker start-marker', html: `🏠`, iconSize: [26, 26] }) }).addTo(markersLayer);
         
         pointsDeLaTournee.forEach((p, i) => {
@@ -27,7 +34,7 @@ async function lancerCalcul() {
         pointsDeLaTournee.forEach(p => allCoords.push(p.Longitude + "," + p.Latitude));
 
         try {
-            document.getElementById('stats').innerHTML = "⌛ Calcul des trajets...";
+            statsDiv.innerHTML = "⌛ Calcul des trajets en cours...";
             const chunkSize = 15; 
             
             for (let i = 0; i < allCoords.length - 1; i += chunkSize - 1) {
@@ -41,23 +48,24 @@ async function lancerCalcul() {
                     const routePart = d.routes[0];
                     L.geoJSON(routePart.geometry, { style: { color: '#2563eb', weight: 4, opacity: 0.4 } }).addTo(routeLayer);
                     
-                    // --- SOMME DES DONNÉES ---
-                    cumulDist += routePart.distance;
-                    cumulDuree += routePart.duration;
+                    // Somme des données du tronçon
+                    cumulDist += parseFloat(routePart.distance);
+                    cumulDuree += parseFloat(routePart.duration);
                     
                     routePart.legs.forEach(leg => {
                         segmentsTime.push(Math.round(leg.duration / 60));
                     });
                 }
+                // Petit délai pour éviter l'erreur 429
                 await new Promise(res => setTimeout(res, 150)); 
             }
 
-            // --- AFFICHAGE FINAL BASÉ SUR LA SOMME ---
-            document.getElementById('stats').innerHTML = `
+            // AFFICHAGE FINAL (Une fois la boucle terminée)
+            statsDiv.innerHTML = `
                 <strong>Résumé de la zone :</strong><br>
                 📏 Distance totale : <b>${(cumulDist / 1000).toFixed(1)} km</b><br>
-                ⏱️ Temps total estimé : <b>${Math.round(cumulDuree / 60)} min</b><br>
-                📍 Nombre d'arrêts : <b>${pointsDeLaTournee.length}</b>
+                ⏱️ Temps total : <b>${Math.round(cumulDuree / 60)} min</b><br>
+                📍 Arrêts : <b>${pointsDeLaTournee.length}</b>
             `;
             
             document.getElementById('nav-panel').style.display = 'block';
@@ -66,7 +74,6 @@ async function lancerCalcul() {
             
         } catch (e) { 
             console.error(e);
-            document.getElementById('stats').innerHTML = "⚠️ Erreur lors du calcul des segments."; 
+            statsDiv.innerHTML = "⚠️ Erreur lors du calcul des statistiques."; 
         }
     }
-            
