@@ -1,58 +1,58 @@
 async function lancerCalcul() {
         markersLayer.clearLayers();
         routeLayer.clearLayers();
-        segmentsTime = []; // On vide les temps par segment
+        segmentsTime = []; 
         const mode = document.getElementById('modeSelect').value;
         
-        // Filtrage des points de la zone
+        // Filtrage des points de la zone sélectionnée
         let pointsBruts = allData.filter(d => zonesActivees.includes(d.Zone)).filter(c => c.Latitude && c.Longitude);
         if (pointsBruts.length === 0) return;
 
-        // Calcul de l'ordre (TSP)
+        // Calcul de l'ordre le plus court (TSP)
         pointsDeLaTournee = ordonnerPointsTSP(pointDepartCoords, pointsBruts);
 
-        // Affichage du point de départ
+        // Ajout visuel du départ
         L.marker(pointDepartCoords, { icon: L.divIcon({ className: 'numbered-marker start-marker', html: `🏠`, iconSize: [26, 26] }) }).addTo(markersLayer);
         
-        // Affichage des points de livraison
+        // Ajout des points de livraison numérotés
         pointsDeLaTournee.forEach((p, i) => {
             const icon = L.divIcon({ className: `numbered-marker marker-id-${i}`, html: `<span>${i+1}</span>`, iconSize: [22, 22] });
             L.marker([p.Latitude, p.Longitude], { icon: icon }).addTo(markersLayer).bindPopup(`<b>${p["NOM DANS LISTING"]}</b>`);
         });
 
-        // Préparation des coordonnées pour l'API unique
+        // Préparation de la liste des coordonnées pour l'appel UNIQUE
         let coords = [pointDepartCoords[1] + "," + pointDepartCoords[0]];
         pointsDeLaTournee.forEach(p => coords.push(p.Longitude + "," + p.Latitude));
 
         try {
-            document.getElementById('stats').innerHTML = "⌛ Calcul de l'itinéraire global...";
+            document.getElementById('stats').innerHTML = "⌛ Calcul de l'itinéraire...";
             
-            // UNE SEULE REQUÊTE pour toute la zone (évite l'erreur 429)
+            // APPEL UNIQUE : On envoie tous les points d'un coup (Évite le blocage 429)
             const fullUrl = `https://router.project-osrm.org/route/v1/${mode}/${coords.join(';')}?overview=full&geometries=geojson`;
             const r = await fetch(fullUrl);
             const d = await r.json();
             
             if (d.code === 'Ok') {
-                const routeGlobale = d.routes[0];
+                const routeObj = d.routes[0];
                 
-                // Affichage du tracé bleu
-                L.geoJSON(routeGlobale.geometry, { style: { color: '#2563eb', weight: 4, opacity: 0.3 } }).addTo(routeLayer);
+                // Tracé de la ligne sur la carte
+                L.geoJSON(routeObj.geometry, { style: { color: '#2563eb', weight: 4, opacity: 0.4 } }).addTo(routeLayer);
                 
-                // --- RÉCUPÉRATION DES STATS GLOBALES ---
-                const totalDist = routeGlobale.distance; // en mètres
-                const totalDuree = routeGlobale.duration; // en secondes
+                // Calcul des stats globales depuis la réponse unique
+                const totalDist = (routeObj.distance / 1000).toFixed(1); // km
+                const totalDuree = Math.round(routeObj.duration / 60); // min
                 
-                // On remplit segmentsTime pour la navigation point par point
-                routeGlobale.legs.forEach(leg => {
-                    segmentsTime.push(Math.round(leg.duration / 60)); // conversion en minutes
+                // Extraction des temps de chaque segment (legs) pour la navigation
+                routeObj.legs.forEach(leg => {
+                    segmentsTime.push(Math.round(leg.duration / 60));
                 });
 
-                // Mise à jour de l'affichage Stats
+                // Affichage des statistiques dans la barre latérale
                 document.getElementById('stats').innerHTML = `
-                    <strong>Résumé de la tournée :</strong><br>
-                    📏 Distance totale : <b>${(totalDist/1000).toFixed(1)} km</b><br>
-                    ⏱️ Temps de trajet : <b>${Math.round(totalDuree/60)} min</b><br>
-                    📍 Nombre d'arrêts : <b>${pointsDeLaTournee.length}</b>
+                    <strong>Résumé Tournée :</strong><br>
+                    📏 Distance : <b>${totalDist} km</b><br>
+                    ⏱️ Temps : <b>${totalDuree} min</b><br>
+                    📍 Arrêts : <b>${pointsDeLaTournee.length}</b>
                 `;
                 
                 document.getElementById('nav-panel').style.display = 'block';
@@ -61,6 +61,6 @@ async function lancerCalcul() {
             }
         } catch (e) { 
             console.error(e);
-            document.getElementById('stats').innerHTML = "⚠️ Erreur lors du calcul global."; 
+            document.getElementById('stats').innerHTML = "⚠️ Erreur serveur (Trop de points ou zone inaccessible)."; 
         }
     }
