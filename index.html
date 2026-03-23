@@ -4,63 +4,65 @@ async function lancerCalcul() {
         segmentsTime = []; 
         const mode = document.getElementById('modeSelect').value;
         
-        // Filtrage des points de la zone sélectionnée
         let pointsBruts = allData.filter(d => zonesActivees.includes(d.Zone)).filter(c => c.Latitude && c.Longitude);
         if (pointsBruts.length === 0) return;
 
-        // Calcul de l'ordre le plus court (TSP)
         pointsDeLaTournee = ordonnerPointsTSP(pointDepartCoords, pointsBruts);
 
-        // Ajout visuel du départ
+        // Marqueurs
         L.marker(pointDepartCoords, { icon: L.divIcon({ className: 'numbered-marker start-marker', html: `🏠`, iconSize: [26, 26] }) }).addTo(markersLayer);
-        
-        // Ajout des points de livraison numérotés
         pointsDeLaTournee.forEach((p, i) => {
             const icon = L.divIcon({ className: `numbered-marker marker-id-${i}`, html: `<span>${i+1}</span>`, iconSize: [22, 22] });
             L.marker([p.Latitude, p.Longitude], { icon: icon }).addTo(markersLayer).bindPopup(`<b>${p["NOM DANS LISTING"]}</b>`);
         });
 
-        // Préparation de la liste des coordonnées pour l'appel UNIQUE
-        let coords = [pointDepartCoords[1] + "," + pointDepartCoords[0]];
-        pointsDeLaTournee.forEach(p => coords.push(p.Longitude + "," + p.Latitude));
+        // Préparation des coordonnées
+        let allCoords = [pointDepartCoords[1] + "," + pointDepartCoords[0]];
+        pointsDeLaTournee.forEach(p => allCoords.push(p.Longitude + "," + p.Latitude));
+
+        let totalDist = 0;
+        let totalDuree = 0;
 
         try {
-            document.getElementById('stats').innerHTML = "⌛ Calcul de l'itinéraire...";
+            document.getElementById('stats').innerHTML = "⌛ Calcul des tronçons...";
             
-            // APPEL UNIQUE : On envoie tous les points d'un coup (Évite le blocage 429)
-            const fullUrl = `https://router.project-osrm.org/route/v1/${mode}/${coords.join(';')}?overview=full&geometries=geojson`;
-            const r = await fetch(fullUrl);
-            const d = await r.json();
-            
-            if (d.code === 'Ok') {
-                const routeObj = d.routes[0];
+            // DÉCOUPAGE EN TRONÇONS DE 15 POINTS (Évite l'erreur 400 et 429)
+            const chunkSize = 15;
+            for (let i = 0; i < allCoords.length - 1; i += chunkSize - 1) {
+                const chunk = allCoords.slice(i, i + chunkSize);
+                const url = `https://router.project-osrm.org/route/v1/${mode}/${chunk.join(';')}?overview=full&geometries=geojson`;
                 
-                // Tracé de la ligne sur la carte
-                L.geoJSON(routeObj.geometry, { style: { color: '#2563eb', weight: 4, opacity: 0.4 } }).addTo(routeLayer);
+                const r = await fetch(url);
+                const d = await r.json();
                 
-                // Calcul des stats globales depuis la réponse unique
-                const totalDist = (routeObj.distance / 1000).toFixed(1); // km
-                const totalDuree = Math.round(routeObj.duration / 60); // min
-                
-                // Extraction des temps de chaque segment (legs) pour la navigation
-                routeObj.legs.forEach(leg => {
-                    segmentsTime.push(Math.round(leg.duration / 60));
-                });
-
-                // Affichage des statistiques dans la barre latérale
-                document.getElementById('stats').innerHTML = `
-                    <strong>Résumé Tournée :</strong><br>
-                    📏 Distance : <b>${totalDist} km</b><br>
-                    ⏱️ Temps : <b>${totalDuree} min</b><br>
-                    📍 Arrêts : <b>${pointsDeLaTournee.length}</b>
-                `;
-                
-                document.getElementById('nav-panel').style.display = 'block';
-                majUIEtape();
-                map.fitBounds(markersLayer.getBounds(), { padding: [40, 40] });
+                if (d.code === 'Ok') {
+                    const routePart = d.routes[0];
+                    L.geoJSON(routePart.geometry, { style: { color: '#2563eb', weight: 4, opacity: 0.4 } }).addTo(routeLayer);
+                    
+                    totalDist += routePart.distance;
+                    totalDuree += routePart.duration;
+                    
+                    routePart.legs.forEach(leg => {
+                        segmentsTime.push(Math.round(leg.duration / 60));
+                    });
+                }
+                // Petit délai de 100ms pour ne pas brusquer le serveur
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
+
+            document.getElementById('stats').innerHTML = `
+                <strong>Résumé Tournée :</strong><br>
+                📏 Distance : <b>${(totalDist / 1000).toFixed(1)} km</b><br>
+                ⏱️ Temps : <b>${Math.round(totalDuree / 60)} min</b><br>
+                📍 Arrêts : <b>${pointsDeLaTournee.length}</b>
+            `;
+            
+            document.getElementById('nav-panel').style.display = 'block';
+            majUIEtape();
+            map.fitBounds(markersLayer.getBounds(), { padding: [40, 40] });
+            
         } catch (e) { 
             console.error(e);
-            document.getElementById('stats').innerHTML = "⚠️ Erreur serveur (Trop de points ou zone inaccessible)."; 
+            document.getElementById('stats').innerHTML = "⚠️ Erreur de calcul (Vérifiez votre connexion)."; 
         }
     }
