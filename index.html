@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TourniMap Hérault | MBS Junior Conseil</title>
+    <title>TourniMap Hérault | IA Optimisée</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
@@ -23,7 +23,7 @@
         .numbered-marker { background-color: var(--primary); color: white; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; }
         .marker-active { background-color: var(--success) !important; transform: scale(1.3); z-index: 1000 !important; }
         .start-marker { background-color: #ef4444 !important; }
-        .leaflet-tooltip-own { background-color: var(--dark); color: white; border: none; border-radius: 4px; padding: 8px 12px; font-size: 0.8rem; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+        .leaflet-tooltip-own { background-color: var(--dark); color: white; border: none; border-radius: 4px; padding: 8px 12px; font-size: 0.8rem; }
     </style>
 </head>
 <body>
@@ -32,11 +32,11 @@
     <h1>TourniMap Hérault</h1>
     <div class="subtitle">MBS Junior Conseil</div>
     
-    <div class="label">Zone</div>
+    <div class="label">Zone Intelligente</div>
     <select id="zoneSelect" onchange="resetEtCalculer()">
-        <option value="">-- Choisir une zone --</option>
-        <script>for(let i=1; i<=13; i++) document.write(`<option value="${i}">Zone ${i}</option>`);</script>
+        <option value="">-- Calcul des zones... --</option>
     </select>
+    
     <select id="modeSelect" onchange="lancerCalcul()">
         <option value="foot">🚶 Marche / Tramway</option>
         <option value="driving">🚗 Voiture</option>
@@ -49,7 +49,7 @@
         <button onclick="etapeSuivante()" style="background:var(--success); margin-top:10px;">Valider l'étape</button>
     </div>
     
-    <div id="stats">Chargement des données...</div>
+    <div id="stats">Chargement du CSV...</div>
 </div>
 
 <div id="map"></div>
@@ -59,23 +59,75 @@
 
 <script>
     const pointDepartCoords = [43.6219, 3.8347];
-    const map = L.map('map', { zoomControl: false }).setView(pointDepartCoords, 13);
+    const map = L.map('map', { zoomControl: false }).setView(pointDepartCoords, 12);
     L.control.zoom({ position: 'topright' }).addTo(map);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
 
     let markersLayer = L.featureGroup().addTo(map);
     let routeLayer = L.featureGroup().addTo(map);
     let allData = [];
-    let zonesActivees = [];
     let pointsDeLaTournee = [];
     let indexEtapeActuelle = 0; 
     let segmentsTime = [];
 
+    // --- LOGIQUE DE SECTORISATION AUTOMATIQUE ---
+    function sectoriserPoints(points, k) {
+        // Simple K-Means simplifié pour le navigateur
+        let centroids = points.slice(0, k).map(p => ({ lat: p.Latitude, lng: p.Longitude }));
+        let assignments = new Array(points.length);
+        
+        for (let iter = 0; iter < 10; iter++) {
+            // Assignation
+            points.forEach((p, i) => {
+                let minDist = Infinity;
+                centroids.forEach((c, ci) => {
+                    let d = Math.pow(p.Latitude - c.lat, 2) + Math.pow(p.Longitude - c.lng, 2);
+                    if (d < minDist) { minDist = d; assignments[i] = ci; }
+                });
+            });
+            // Mise à jour centroids
+            centroids = centroids.map((c, ci) => {
+                let cluster = points.filter((_, i) => assignments[i] === ci);
+                if (cluster.length === 0) return c;
+                return {
+                    lat: cluster.reduce((sum, p) => sum + p.Latitude, 0) / cluster.length,
+                    lng: cluster.reduce((sum, p) => sum + p.Longitude, 0) / cluster.length
+                };
+            });
+        }
+        points.forEach((p, i) => p.AutoZone = assignments[i] + 1);
+        
+        // Tri des zones par distance au départ
+        let zoneDistances = centroids.map((c, i) => ({
+            id: i + 1,
+            dist: Math.pow(c.lat - pointDepartCoords[0], 2) + Math.pow(c.lng - pointDepartCoords[1], 2)
+        })).sort((a, b) => a.dist - b.dist);
+        
+        let mapping = {};
+        zoneDistances.forEach((z, i) => mapping[z.id] = i + 1);
+        points.forEach(p => p.AutoZone = mapping[p.AutoZone]);
+    }
+
     Papa.parse("commerces.csv", {
         download: true, header: true, skipEmptyLines: true,
         complete: function(results) { 
-            allData = results.data;
-            document.getElementById('stats').innerHTML = "Données prêtes. Sélectionnez une zone.";
+            allData = results.data.map(d => ({
+                ...d,
+                Latitude: parseFloat(d.Latitude),
+                Longitude: parseFloat(d.Longitude)
+            })).filter(d => !isNaN(d.Latitude));
+
+            // On crée 13 zones automatiquement
+            sectoriserPoints(allData, 13);
+
+            // Remplissage du menu déroulant
+            const select = document.getElementById('zoneSelect');
+            select.innerHTML = '<option value="">-- Choisir une zone --</option>';
+            for(let i=1; i<=13; i++) {
+                let count = allData.filter(d => d.AutoZone === i).length;
+                select.innerHTML += `<option value="${i}">Zone ${i} (${count} points)</option>`;
+            }
+            document.getElementById('stats').innerHTML = "Zones calculées avec succès.";
         }
     });
 
@@ -86,25 +138,25 @@
         while (pts.length > 0) {
             let idx = 0; let min = Infinity;
             for (let i = 0; i < pts.length; i++) {
-                let d = Math.sqrt(Math.pow(cur.lat - parseFloat(pts[i].Latitude), 2) + Math.pow(cur.lng - parseFloat(pts[i].Longitude), 2));
+                let d = Math.pow(cur.lat - pts[i].Latitude, 2) + Math.pow(cur.lng - pts[i].Longitude, 2);
                 if (d < min) { min = d; idx = i; }
             }
             let p = pts.splice(idx, 1)[0];
             path.push(p);
-            cur = { lat: parseFloat(p.Latitude), lng: parseFloat(p.Longitude) };
+            cur = { lat: p.Latitude, lng: p.Longitude };
         }
         return path;
     }
 
     function resetEtCalculer() {
-        const val = document.getElementById('zoneSelect').value;
-        if (!val) return;
-        zonesActivees = [val];
         indexEtapeActuelle = 0;
         lancerCalcul();
     }
 
     async function lancerCalcul() {
+        const zoneIdx = parseInt(document.getElementById('zoneSelect').value);
+        if (!zoneIdx) return;
+
         markersLayer.clearLayers();
         routeLayer.clearLayers();
         segmentsTime = [];
@@ -113,27 +165,16 @@
         const mode = document.getElementById('modeSelect').value;
         const statsBox = document.getElementById('stats');
         
-        let filtered = allData.filter(d => zonesActivees.includes(d.Zone))
-                              .filter(c => c.Latitude && c.Longitude && !isNaN(parseFloat(c.Latitude)));
-
-        if (filtered.length === 0) return;
-
+        let filtered = allData.filter(d => d.AutoZone === zoneIdx);
         pointsDeLaTournee = ordonnerPointsTSP(pointDepartCoords, filtered);
 
         // Marqueurs
-        L.marker(pointDepartCoords, { icon: L.divIcon({ className: 'numbered-marker start-marker', html: '🏠', iconSize: [26, 26] }) }).addTo(markersLayer).bindTooltip("DÉPART : Av. des Moulins", { direction: 'top', className: 'leaflet-tooltip-own' });
-        
+        L.marker(pointDepartCoords, { icon: L.divIcon({ className: 'numbered-marker start-marker', html: '🏠', iconSize: [26, 26] }) }).addTo(markersLayer);
         pointsDeLaTournee.forEach((p, i) => {
-            const nom = p["NOM DANS LISTING"] || "Commerce";
-            const adresse = p["ADRESSE"] || "";
             const icon = L.divIcon({ className: `numbered-marker marker-id-${i}`, html: `<span>${i+1}</span>`, iconSize: [22, 22] });
-            
-            L.marker([parseFloat(p.Latitude), parseFloat(p.Longitude)], { icon: icon })
+            L.marker([p.Latitude, p.Longitude], { icon: icon })
              .addTo(markersLayer)
-             .bindTooltip(`<b>${i+1}. ${nom}</b><br><span style="font-size:0.7rem; opacity:0.8;">${adresse}</span>`, { 
-                 direction: 'top', 
-                 className: 'leaflet-tooltip-own' 
-             });
+             .bindTooltip(`<b>${i+1}. ${p["NOM DANS LISTING"]}</b><br>${p.ADRESSE}`, { direction: 'top', className: 'leaflet-tooltip-own' });
         });
 
         let coords = [pointDepartCoords[1] + "," + pointDepartCoords[0]];
@@ -167,7 +208,7 @@
         if (indexEtapeActuelle < pointsDeLaTournee.length - 1) {
             indexEtapeActuelle++; majUIEtape();
         } else {
-            alert("Terminé !"); location.reload();
+            alert("Tournée terminée !");
         }
     }
 
