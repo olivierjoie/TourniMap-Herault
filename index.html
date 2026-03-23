@@ -3,32 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TourniMap Hérault | MBS</title>
+    <title>TourniMap Hérault | MBS Junior Conseil</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
         :root { --primary: #2563eb; --dark: #1e293b; --bg: #f8fafc; }
-        body { margin: 0; font-family: 'Inter', sans-serif; display: flex; height: 100vh; background: var(--bg); }
-        #sidebar { width: 320px; background: white; display: flex; flex-direction: column; box-shadow: 2px 0 10px rgba(0,0,0,0.1); z-index: 2000; padding: 20px; }
-        h1 { font-size: 1.2rem; margin: 0; color: var(--dark); }
-        .label { font-size: 0.7rem; font-weight: 600; color: #94a3b8; text-transform: uppercase; margin-top: 20px; }
-        select, button { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #e2e8f0; margin-top: 5px; font-size: 0.9rem; cursor: pointer; }
-        button { background: var(--primary); color: white; border: none; font-weight: 600; }
-        button.secondary { background: #f1f5f9; color: var(--dark); margin-top: 10px; }
-        #stats { margin-top: auto; padding: 15px; background: var(--bg); border-radius: 8px; font-size: 0.85rem; }
+        body { margin: 0; font-family: 'Inter', sans-serif; display: flex; height: 100vh; background: var(--bg); overflow: hidden;}
+        #sidebar { width: 350px; background: white; display: flex; flex-direction: column; box-shadow: 4px 0 15px rgba(0,0,0,0.05); z-index: 2000; padding: 25px; box-sizing: border-box; }
+        h1 { font-size: 1.3rem; color: var(--dark); margin: 0; }
+        .subtitle { font-size: 0.8rem; color: #64748b; margin-bottom: 25px; }
+        .label { font-size: 0.75rem; font-weight: 600; color: #94a3b8; text-transform: uppercase; margin: 15px 0 5px 0; }
+        select, button { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 0.9rem; margin-bottom: 10px; outline: none; }
+        button { background: var(--primary); color: white; border: none; font-weight: 600; cursor: pointer; }
+        button.secondary { background: #f1f5f9; color: var(--dark); border: 1px solid #e2e8f0; }
+        #stats { margin-top: auto; background: #f8fafc; padding: 15px; border-radius: 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; }
         #map { flex-grow: 1; z-index: 1; }
-        
-        /* Style des numéros sur la carte */
-        .marker-number {
-            background: var(--primary);
+
+        /* Style des pastilles numérotées */
+        .numbered-marker {
+            background-color: var(--primary);
             color: white;
-            border: 2px solid white;
             border-radius: 50%;
-            text-align: center;
-            line-height: 20px;
+            border: 2px solid white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             font-size: 11px;
-            font-weight: bold;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            font-weight: 600;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+
+        /* Style du Tooltip (Affichage au survol) */
+        .leaflet-tooltip-own {
+            background-color: var(--dark);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 5px 10px;
+            font-weight: 600;
+            font-size: 0.8rem;
         }
     </style>
 </head>
@@ -36,23 +49,22 @@
 
 <div id="sidebar">
     <h1>TourniMap Hérault</h1>
-    <div style="font-size: 0.8rem; color: #64748b;">MBS Junior Conseil</div>
+    <div class="subtitle">Enquête MBS Junior Conseil</div>
     
-    <div class="label">Zone</div>
+    <div class="label">Zone de mission</div>
     <select id="zoneSelect" onchange="resetEtCalculer()">
-        <option value="">-- Choisir --</option>
+        <option value="">-- Choisir une zone --</option>
         <script>for(let i=1; i<=13; i++) document.write(`<option value="${i}">Zone ${i}</option>`);</script>
     </select>
 
     <div class="label">Transport</div>
     <select id="modeSelect" onchange="lancerCalcul()">
-        <option value="foot">🚶 Marche / Tram</option>
+        <option value="foot">🚶 Marche / Tramway</option>
         <option value="driving">🚗 Voiture</option>
     </select>
 
     <button onclick="combinerZones()" class="secondary">➕ Combiner Zone</button>
-    
-    <div id="stats">Sélectionnez une zone.</div>
+    <div id="stats"><i>Sélectionnez une zone.</i></div>
 </div>
 
 <div id="map"></div>
@@ -61,28 +73,23 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
 
 <script>
-    const pointDepart = [43.6219, 3.8347];
-    const map = L.map('map', { zoomControl: false }).setView(pointDepart, 13);
+    const pointDepartCoords = [43.6219, 3.8347];
+    const map = L.map('map', { zoomControl: false }).setView(pointDepartCoords, 13);
     L.control.zoom({ position: 'topright' }).addTo(map);
 
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
-
-    // Départ
-    L.marker(pointDepart).addTo(map).bindPopup("<b>Départ MBS</b>");
 
     let markersLayer = L.layerGroup().addTo(map);
     let routeLayer = L.layerGroup().addTo(map);
     let allData = [];
     let zonesActivees = [];
 
-    // Lecture du CSV avec détection auto du séparateur (; ou ,)
+    // Chargement du CSV
     Papa.parse("commerces.csv", {
-        download: true,
-        header: true,
-        skipEmptyLines: true,
-        complete: function(results) {
+        download: true, header: true, skipEmptyLines: true,
+        complete: function(results) { 
             allData = results.data;
-            console.log("Données chargées : " + allData.length);
+            console.log("Données chargées :", allData.length);
         }
     });
 
@@ -104,48 +111,61 @@
     async function lancerCalcul() {
         markersLayer.clearLayers();
         routeLayer.clearLayers();
+        const statsDiv = document.getElementById('stats');
+        statsDiv.innerHTML = "⌛ Calcul...";
+
         const mode = document.getElementById('modeSelect').value;
-        
         const points = allData.filter(d => zonesActivees.includes(d.Zone))
                                .filter(c => c.Latitude && c.Longitude);
 
         if (points.length === 0) {
-            document.getElementById('stats').innerHTML = "Aucune donnée trouvée.";
+            statsDiv.innerHTML = "Aucune donnée.";
             return;
         }
 
-        let coords = [pointDepart[1] + "," + pointDepart[0]];
-
+        // Ajout des points
         points.forEach((p, index) => {
-            coords.push(p.Longitude + "," + p.Latitude);
-            
-            // Création du marqueur avec numéro
+            const num = index + 1;
             const icon = L.divIcon({
-                className: 'marker-number',
-                html: index + 1,
-                iconSize: [24, 24]
+                className: 'numbered-marker',
+                html: `<span>${num}</span>`,
+                iconSize: [22, 22]
             });
+
+            // Récupération du nom (attention aux majuscules dans le CSV)
+            const nomCommerce = p["NOM DANS LISTING"] || "Commerce sans nom";
 
             L.marker([p.Latitude, p.Longitude], { icon: icon })
              .addTo(markersLayer)
-             .bindPopup(`<b>${p.Nom}</b><br>${p.Adresse}`);
+             // CLIC : Popup avec détails
+             .bindPopup(`<b>${nomCommerce}</b><br>${p.ADRESSE}`)
+             // SURVOL : Tooltip avec le nom
+             .bindTooltip(nomCommerce, {
+                 permanent: false, 
+                 direction: 'top', 
+                 className: 'leaflet-tooltip-own',
+                 offset: [0, -10]
+             });
         });
 
-        // Calcul d'itinéraire (par paquets de 10 pour éviter les bugs)
+        // Calcul itinéraire OSRM par paquets
+        let coords = [pointDepartCoords[1] + "," + pointDepartCoords[0]];
+        points.forEach(p => coords.push(p.Longitude + "," + p.Latitude));
+
         try {
             for (let i = 0; i < coords.length - 1; i += 9) {
                 const chunk = coords.slice(i, i + 10);
                 const url = `https://router.project-osrm.org/route/v1/${mode}/${chunk.join(';')}?overview=full&geometries=geojson`;
-                const resp = await fetch(url);
-                const data = await resp.json();
-                if (data.code === 'Ok') {
-                    L.geoJSON(data.routes[0].geometry, { style: { color: '#2563eb', weight: 4 } }).addTo(routeLayer);
+                const r = await fetch(url);
+                const d = await r.json();
+                if (d.code === 'Ok') {
+                    L.geoJSON(d.routes[0].geometry, { style: { color: '#2563eb', weight: 4, opacity: 0.5 } }).addTo(routeLayer);
                 }
             }
-            document.getElementById('stats').innerHTML = `<b>Zone ${zonesActivees.join('+')}</b><br>${points.length} commerces.`;
-            map.fitBounds(markersLayer.getBounds(), {padding: [30,30]});
+            statsDiv.innerHTML = `✅ Zone prête (${points.length} arrêts)`;
+            map.fitBounds(markersLayer.getBounds(), { padding: [40, 40] });
         } catch (e) {
-            console.log("Erreur itinéraire");
+            statsDiv.innerHTML = "⚠️ Erreur itinéraire";
         }
     }
 </script>
