@@ -3,22 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TourniMap Hérault | Optimisation TSP</title>
+    <title>TourniMap Hérault | Navigation</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
-        :root { --primary: #2563eb; --dark: #1e293b; --bg: #f8fafc; }
+        :root { --primary: #2563eb; --dark: #1e293b; --bg: #f8fafc; --success: #10b981; }
         body { margin: 0; font-family: 'Inter', sans-serif; display: flex; height: 100vh; background: var(--bg); overflow: hidden;}
+        
         #sidebar { width: 350px; background: white; display: flex; flex-direction: column; box-shadow: 4px 0 15px rgba(0,0,0,0.05); z-index: 2000; padding: 25px; box-sizing: border-box; }
         h1 { font-size: 1.3rem; color: var(--dark); margin: 0; }
-        .subtitle { font-size: 0.8rem; color: #64748b; margin-bottom: 25px; }
+        .subtitle { font-size: 0.8rem; color: #64748b; margin-bottom: 20px; }
+        
         .label { font-size: 0.75rem; font-weight: 600; color: #94a3b8; text-transform: uppercase; margin: 15px 0 5px 0; }
         select, button { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 0.9rem; margin-bottom: 10px; outline: none; }
+        
         button { background: var(--primary); color: white; border: none; font-weight: 600; cursor: pointer; }
         button.secondary { background: #f1f5f9; color: var(--dark); border: 1px solid #e2e8f0; }
+        
+        /* --- Nouveau : Style Navigation --- */
+        #nav-panel { 
+            background: #eff6ff; border: 2px solid var(--primary); border-radius: 12px; 
+            padding: 15px; margin-top: 10px; display: none; 
+        }
+        .next-label { font-size: 0.7rem; color: var(--primary); font-weight: bold; text-transform: uppercase; }
+        .next-name { font-size: 1rem; font-weight: 600; color: var(--dark); margin: 5px 0; }
+        .next-info { font-size: 0.85rem; color: #64748b; }
+        .btn-next { background: var(--success); margin-top: 10px; margin-bottom: 0; }
+        
         #stats { margin-top: auto; background: #f8fafc; padding: 15px; border-radius: 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; }
         #map { flex-grow: 1; z-index: 1; }
-        .numbered-marker { background-color: var(--primary); color: white; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; }
+
+        .numbered-marker { background-color: var(--primary); color: white; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; transition: all 0.3s; }
+        .marker-active { background-color: var(--success) !important; transform: scale(1.3); z-index: 1000 !important; }
         .start-marker { background-color: #ef4444 !important; font-size: 14px !important; }
         .leaflet-tooltip-own { background-color: var(--dark); color: white; border: none; border-radius: 4px; padding: 5px 10px; font-weight: 600; font-size: 0.8rem; }
     </style>
@@ -27,22 +43,28 @@
 
 <div id="sidebar">
     <h1>TourniMap Hérault</h1>
-    <div class="subtitle">Optimisation par Graphes (TSP)</div>
+    <div class="subtitle">MBS Junior Conseil</div>
     
-    <div class="label">Zone de mission</div>
+    <div class="label">Configuration</div>
     <select id="zoneSelect" onchange="resetEtCalculer()">
         <option value="">-- Choisir une zone --</option>
         <script>for(let i=1; i<=13; i++) document.write(`<option value="${i}">Zone ${i}</option>`);</script>
     </select>
-
-    <div class="label">Transport</div>
     <select id="modeSelect" onchange="lancerCalcul()">
         <option value="foot">🚶 Marche / Tramway</option>
         <option value="driving">🚗 Voiture</option>
     </select>
 
-    <button onclick="combinerZones()" class="secondary">➕ Combiner Zone</button>
-    <div id="stats"><i>Sélectionnez une zone pour optimiser le parcours.</i></div>
+    <div id="nav-panel">
+        <div class="next-label">📍 Étape Suivante</div>
+        <div id="current-target-name" class="next-name">-</div>
+        <div id="current-target-info" class="next-info">Temps estimé : -</div>
+        <button class="btn-next" onclick="etapeSuivante()">Valider l'étape</button>
+    </div>
+
+    <button onclick="combinerZones()" class="secondary" style="margin-top:15px;">➕ Combiner Zone</button>
+    
+    <div id="stats"><i>Sélectionnez une zone pour démarrer.</i></div>
 </div>
 
 <div id="map"></div>
@@ -60,45 +82,40 @@
     let routeLayer = L.layerGroup().addTo(map);
     let allData = [];
     let zonesActivees = [];
+    
+    // Variables de navigation
+    let pointsDeLaTournee = [];
+    let indexEtapeActuelle = 0; 
+    let segmentsTime = []; // Stocke les durées de chaque segment
 
     Papa.parse("commerces.csv", {
         download: true, header: true, skipEmptyLines: true,
         complete: function(results) { allData = results.data; }
     });
 
-    // --- ALGORITHME DU PLUS PROCHE VOISIN (TSP) ---
+    // Algorithme TSP (inchangé)
     function ordonnerPointsTSP(depart, points) {
         let pointsRestants = [...points];
         let parcoursOrdonne = [];
-        let positionActuelle = { lat: depart[0], lng: depart[1] };
-
+        let pos = { lat: depart[0], lng: depart[1] };
         while (pointsRestants.length > 0) {
-            let plusProcheIdx = 0;
-            let distanceMin = Infinity;
-
+            let plusProcheIdx = 0; let distMin = Infinity;
             for (let i = 0; i < pointsRestants.length; i++) {
-                let d = calculerDistanceManhattan(positionActuelle, pointsRestants[i]);
-                if (d < distanceMin) {
-                    distanceMin = d;
-                    plusProcheIdx = i;
-                }
+                let d = Math.sqrt(Math.pow(pos.lat - pointsRestants[i].Latitude, 2) + Math.pow(pos.lng - pointsRestants[i].Longitude, 2));
+                if (d < distMin) { distMin = d; plusProcheIdx = i; }
             }
-
-            let pointChoisi = pointsRestants.splice(plusProcheIdx, 1)[0];
-            parcoursOrdonne.push(pointChoisi);
-            positionActuelle = { lat: parseFloat(pointChoisi.Latitude), lng: parseFloat(pointChoisi.Longitude) };
+            let p = pointsRestants.splice(plusProcheIdx, 1)[0];
+            parcoursOrdonne.push(p);
+            pos = { lat: parseFloat(p.Latitude), lng: parseFloat(p.Longitude) };
         }
         return parcoursOrdonne;
-    }
-
-    function calculerDistanceManhattan(p1, p2) {
-        return Math.sqrt(Math.pow(p1.lat - p2.Latitude, 2) + Math.pow(p1.lng - p2.Longitude, 2));
     }
 
     function resetEtCalculer() {
         const val = document.getElementById('zoneSelect').value;
         if (!val) return;
         zonesActivees = [val];
+        indexEtapeActuelle = 0;
         lancerCalcul();
     }
 
@@ -113,55 +130,80 @@
     async function lancerCalcul() {
         markersLayer.clearLayers();
         routeLayer.clearLayers();
-        const statsDiv = document.getElementById('stats');
-        statsDiv.innerHTML = "⌛ Optimisation de l'ordre de passage...";
-
+        segmentsTime = [];
+        
         const mode = document.getElementById('modeSelect').value;
-        let pointsBruts = allData.filter(d => zonesActivees.includes(d.Zone))
-                                 .filter(c => c.Latitude && c.Longitude);
+        let pointsBruts = allData.filter(d => zonesActivees.includes(d.Zone)).filter(c => c.Latitude && c.Longitude);
+        if (pointsBruts.length === 0) return;
 
-        if (pointsBruts.length === 0) {
-            statsDiv.innerHTML = "Aucune donnée.";
-            return;
-        }
+        pointsDeLaTournee = ordonnerPointsTSP(pointDepartCoords, pointsBruts);
 
-        // APPLICATION DE L'ALGORITHME TSP
-        const pointsOptimises = ordonnerPointsTSP(pointDepartCoords, pointsBruts);
-
-        // Ajout du départ
+        // Affichage Marqueurs
         L.marker(pointDepartCoords, { icon: L.divIcon({ className: 'numbered-marker start-marker', html: `🏠`, iconSize: [26, 26] }) }).addTo(markersLayer);
-
-        // Ajout des points optimisés
-        pointsOptimises.forEach((p, index) => {
-            const num = index + 1;
-            const icon = L.divIcon({ className: 'numbered-marker', html: `<span>${num}</span>`, iconSize: [22, 22] });
-            const nom = p["NOM DANS LISTING"] || "Commerce";
-
+        
+        pointsDeLaTournee.forEach((p, i) => {
+            const icon = L.divIcon({ 
+                className: `numbered-marker marker-id-${i}`, 
+                html: `<span>${i+1}</span>`, 
+                iconSize: [22, 22] 
+            });
             L.marker([p.Latitude, p.Longitude], { icon: icon })
              .addTo(markersLayer)
-             .bindPopup(`<b>${nom}</b><br>${p.ADRESSE}`)
-             .bindTooltip(`${num}. ${nom}`, { direction: 'top', className: 'leaflet-tooltip-own', offset: [0, -10] });
+             .bindPopup(`<b>${p["NOM DANS LISTING"]}</b><br>${p.ADRESSE}`);
         });
 
-        // Tracé de l'itinéraire
+        // Calcul Itinéraire & Temps
         let coords = [pointDepartCoords[1] + "," + pointDepartCoords[0]];
-        pointsOptimises.forEach(p => coords.push(p.Longitude + "," + p.Latitude));
+        pointsDeLaTournee.forEach(p => coords.push(p.Longitude + "," + p.Latitude));
 
+        let totalDist = 0; let totalDuree = 0;
+        
         try {
-            for (let i = 0; i < coords.length - 1; i += 9) {
-                const chunk = coords.slice(i, i + 10);
-                const url = `https://router.project-osrm.org/route/v1/${mode}/${chunk.join(';')}?overview=full&geometries=geojson`;
+            for (let i = 0; i < coords.length - 1; i++) {
+                const url = `https://router.project-osrm.org/route/v1/${mode}/${coords[i]};${coords[i+1]}?overview=full&geometries=geojson`;
                 const r = await fetch(url);
                 const d = await r.json();
                 if (d.code === 'Ok') {
-                    L.geoJSON(d.routes[0].geometry, { style: { color: '#2563eb', weight: 4, opacity: 0.5 } }).addTo(routeLayer);
+                    L.geoJSON(d.routes[0].geometry, { style: { color: '#2563eb', weight: 4, opacity: 0.4 } }).addTo(routeLayer);
+                    totalDist += d.routes[0].distance;
+                    totalDuree += d.routes[0].duration;
+                    segmentsTime.push(Math.round(d.routes[0].duration / 60));
                 }
             }
-            statsDiv.innerHTML = `✅ Itinéraire optimisé<br>📍 ${pointsOptimises.length} étapes logiques.`;
+            
+            document.getElementById('stats').innerHTML = `
+                <strong>Total Zone :</strong><br>
+                📏 Distance : ${(totalDist/1000).toFixed(1)} km<br>
+                ⏱️ Temps total : ${Math.round(totalDuree/60)} min
+            `;
+            
+            document.getElementById('nav-panel').style.display = 'block';
+            majUIEtape();
             map.fitBounds(markersLayer.getBounds(), { padding: [40, 40] });
-        } catch (e) {
-            statsDiv.innerHTML = "⚠️ Erreur réseau.";
+        } catch (e) { console.error(e); }
+    }
+
+    function etapeSuivante() {
+        if (indexEtapeActuelle < pointsDeLaTournee.length - 1) {
+            indexEtapeActuelle++;
+            majUIEtape();
+        } else {
+            alert("Tournée terminée ! Bravo.");
+            document.getElementById('nav-panel').style.display = 'none';
         }
+    }
+
+    function majUIEtape() {
+        const p = pointsDeLaTournee[indexEtapeActuelle];
+        const tempsVersPoint = segmentsTime[indexEtapeActuelle] || 0;
+        
+        document.getElementById('current-target-name').innerText = `${indexEtapeActuelle + 1}. ${p["NOM DANS LISTING"]}`;
+        document.getElementById('current-target-info').innerText = `Trajet estimé : ${tempsVersPoint} min (${p.ADRESSE})`;
+        
+        // Effet visuel sur la carte
+        document.querySelectorAll('.numbered-marker').forEach(el => el.classList.remove('marker-active'));
+        const el = document.querySelector(`.marker-id-${indexEtapeActuelle}`);
+        if(el) el.classList.add('marker-active');
     }
 </script>
 </body>
