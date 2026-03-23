@@ -3,28 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TourniMap Hérault | IA Temps Réel</title>
+    <title>TourniMap Hérault | IA Final</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
         :root { --primary: #2563eb; --dark: #1e293b; --bg: #f8fafc; --success: #10b981; }
         body { margin: 0; font-family: 'Inter', sans-serif; display: flex; height: 100vh; background: var(--bg); overflow: hidden;}
-        #sidebar { width: 320px; background: white; display: flex; flex-direction: column; box-shadow: 4px 0 15px rgba(0,0,0,0.05); z-index: 3000; padding: 20px; box-sizing: border-box; transition: transform 0.3s ease; position: relative; }
+        
+        #sidebar { 
+            width: 320px; background: white; display: flex; flex-direction: column; 
+            box-shadow: 4px 0 15px rgba(0,0,0,0.05); z-index: 3000; padding: 20px; 
+            box-sizing: border-box; transition: transform 0.3s ease; position: relative; 
+        }
         #sidebar.hidden { transform: translateX(-100%); position: absolute; height: 100%; }
-        #toggle-btn { position: absolute; right: -45px; top: 15px; width: 40px; height: 40px; background: var(--primary); color: white; border: none; border-radius: 0 8px 8px 0; cursor: pointer; font-size: 18px; }
+        
+        #toggle-btn { 
+            position: absolute; right: -45px; top: 15px; width: 40px; height: 40px; 
+            background: var(--primary); color: white; border: none; border-radius: 0 8px 8px 0; 
+            cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center;
+        }
+
         h1 { font-size: 1.1rem; color: var(--dark); margin: 0; }
         .subtitle { font-size: 0.7rem; color: #64748b; margin-bottom: 15px; }
         .label { font-size: 0.65rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin: 10px 0 5px 0; }
+        
         select, button.action-btn { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 0.85rem; margin-bottom: 8px; outline: none; }
         button.action-btn { background: var(--primary); color: white; border: none; font-weight: 600; cursor: pointer; }
+        
         #nav-panel { background: #eff6ff; border: 2px solid var(--primary); border-radius: 10px; padding: 12px; margin-top: 10px; display: none; }
         .progress-container { background: #e2e8f0; border-radius: 10px; height: 6px; margin: 8px 0; overflow: hidden; }
         #progress-bar { background: var(--success); width: 0%; height: 100%; transition: width 0.3s; }
+        
         #stats { margin-top: auto; background: #f8fafc; padding: 12px; border-radius: 10px; font-size: 0.75rem; border: 1px solid #e2e8f0; line-height: 1.4; }
         #map { flex-grow: 1; z-index: 1; background: #ddd; }
+
         .numbered-marker { background-color: var(--primary); color: white; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; }
         .marker-active { background-color: var(--success) !important; transform: scale(1.2); z-index: 1000 !important; }
         .leaflet-tooltip-own { background-color: var(--dark); color: white; border: none; border-radius: 4px; padding: 5px 10px; font-size: 0.7rem; }
+
         @media (max-width: 600px) { #sidebar { width: 280px; position: absolute; height: 100%; } }
     </style>
 </head>
@@ -35,15 +51,15 @@
     <h1>TourniMap Hérault</h1>
     <div class="subtitle">MBS Junior Conseil</div>
     
-    <div class="label">1. Transport</div>
+    <div class="label">1. Transport (Recalcule auto)</div>
     <select id="modeSelect" onchange="lancerCalcul()">
         <option value="foot">🚶 Marche / Tramway</option>
         <option value="driving">🚗 Voiture</option>
     </select>
 
-    <div class="label">2. Secteur (Temps équilibré)</div>
+    <div class="label">2. Secteur (Max 150 pts)</div>
     <select id="zoneSelect" onchange="resetEtCalculer()">
-        <option value="">-- Analyse en cours... --</option>
+        <option value="">-- Analyse des points... --</option>
     </select>
     
     <div id="nav-panel">
@@ -80,24 +96,37 @@
     let indexEtapeActuelle = 0; 
     let segmentsTime = [];
 
-    // IA de sectorisation qui équilibre la densité (évite les zones de 500min)
-    function sectorisationDensite(points, k) {
+    // IA de sectorisation : Limite 150 pts + équilibre distance
+    function sectorisationContrainte(points, k) {
         let centroids = [];
-        // On initialise sur des points espacés
         for(let i=0; i<k; i++) {
             let p = points[Math.floor((i / k) * points.length)];
             centroids.push({ lat: p.Latitude, lng: p.Longitude });
         }
 
-        let assignments = new Array(points.length).fill(0);
+        const MAX_CAPACITY = 150; 
+        let assignments = new Array(points.length).fill(-1);
+
         for (let iter = 0; iter < 10; iter++) {
-            points.forEach((p, i) => {
-                let minDist = Infinity;
-                centroids.forEach((c, ci) => {
-                    let d = Math.pow(p.Latitude - c.lat, 2) + Math.pow((p.Longitude - c.lng)*0.7, 2);
-                    if (d < minDist) { minDist = d; assignments[i] = ci; }
-                });
+            let zoneCounts = new Array(k).fill(0);
+            let pointPrefs = points.map((p, i) => {
+                let dists = centroids.map((c, ci) => ({
+                    idx: ci,
+                    d: Math.pow(p.Latitude - c.lat, 2) + Math.pow((p.Longitude - c.lng) * 0.7, 2)
+                })).sort((a, b) => a.d - b.d);
+                return { pIdx: i, prefs: dists };
             });
+
+            pointPrefs.forEach(pp => {
+                for (let pref of pp.prefs) {
+                    if (zoneCounts[pref.idx] < MAX_CAPACITY) {
+                        assignments[pp.pIdx] = pref.idx;
+                        zoneCounts[pref.idx]++;
+                        break;
+                    }
+                }
+            });
+
             centroids = centroids.map((c, ci) => {
                 let cluster = points.filter((_, i) => assignments[i] === ci);
                 return cluster.length ? {
@@ -107,6 +136,15 @@
             });
         }
         points.forEach((p, i) => p.AutoZone = assignments[i] + 1);
+        
+        // Tri par proximité départ
+        let zoneMeta = centroids.map((c, i) => ({
+            oldId: i + 1,
+            dist: Math.sqrt(Math.pow(c.lat - pointDepartCoords[0], 2) + Math.pow(c.lng - pointDepartCoords[1], 2))
+        })).sort((a, b) => a.dist - b.dist);
+        let mapping = {};
+        zoneMeta.forEach((m, i) => mapping[m.oldId] = i + 1);
+        points.forEach(p => p.AutoZone = mapping[p.AutoZone]);
     }
 
     Papa.parse("commerces.csv", {
@@ -116,15 +154,15 @@
                 ...d, Latitude: parseFloat(d.Latitude), Longitude: parseFloat(d.Longitude)
             })).filter(d => !isNaN(d.Latitude));
 
-            sectorisationDensite(allData, 13);
+            sectorisationContrainte(allData, 13);
 
             const select = document.getElementById('zoneSelect');
-            select.innerHTML = '<option value="">-- Sélectionner --</option>';
+            select.innerHTML = '<option value="">-- Choisir --</option>';
             for(let i=1; i<=13; i++) {
                 let count = allData.filter(d => d.AutoZone === i).length;
-                select.innerHTML += `<option value="${i}">Secteur ${i} (${count} pts)</option>`;
+                if(count > 0) select.innerHTML += `<option value="${i}">Secteur ${i} (${count} pts)</option>`;
             }
-            document.getElementById('stats').innerHTML = "Données prêtes. Choisissez un mode puis un secteur.";
+            document.getElementById('stats').innerHTML = "Données prêtes.";
         }
     });
 
@@ -141,11 +179,16 @@
         return path;
     }
 
-    function resetEtCalculer() { indexEtapeActuelle = 0; lancerCalcul(); if (window.innerWidth < 600) toggleSidebar(); }
+    function resetEtCalculer() { 
+        indexEtapeActuelle = 0; 
+        lancerCalcul(); 
+        if (window.innerWidth < 600) toggleSidebar(); 
+    }
 
     async function lancerCalcul() {
         const zoneIdx = parseInt(document.getElementById('zoneSelect').value);
         if (!zoneIdx) return;
+        
         markersLayer.clearLayers(); routeLayer.clearLayers();
         segmentsTime = []; let totalD = 0; let totalT = 0;
         const mode = document.getElementById('modeSelect').value;
@@ -164,7 +207,7 @@
         let coords = [pointDepartCoords[1] + "," + pointDepartCoords[0], ...pointsDeLaTournee.map(p => p.Longitude + "," + p.Latitude)];
 
         try {
-            statsBox.innerHTML = "⌛ Calcul du trajet " + (mode === 'foot' ? 'à pied' : 'en voiture') + "...";
+            statsBox.innerHTML = `⌛ Calcul (${mode === 'foot' ? 'Pied' : 'Voiture'})...`;
             const chunkSize = 15;
             for (let i = 0; i < coords.length - 1; i += chunkSize - 1) {
                 const chunk = coords.slice(i, i + chunkSize);
@@ -177,7 +220,7 @@
                 }
                 await new Promise(res => setTimeout(res, 200));
             }
-            statsBox.innerHTML = `<b>Résumé Secteur ${zoneIdx}</b><br>🚗 Mode : ${mode === 'foot' ? 'Marche' : 'Voiture'}<br>📏 Distance : ${(totalD/1000).toFixed(1)} km<br>⏱️ Temps trajet : <b>${Math.round(totalT/60)} min</b><br>📍 Points : ${pointsDeLaTournee.length}`;
+            statsBox.innerHTML = `<b>Résumé Secteur ${zoneIdx}</b><br>📏 Distance : ${(totalD/1000).toFixed(1)} km<br>⏱️ Temps trajet : <b>${Math.round(totalT/60)} min</b><br>📍 Points : ${pointsDeLaTournee.length}`;
             document.getElementById('nav-panel').style.display = 'block';
             majUIEtape();
             map.fitBounds(markersLayer.getBounds(), { padding: [30, 30] });
@@ -186,13 +229,13 @@
 
     function etapeSuivante() {
         if (indexEtapeActuelle < pointsDeLaTournee.length - 1) { indexEtapeActuelle++; majUIEtape(); }
-        else { alert("Mission terminée !"); }
+        else { alert("Bravo, secteur terminé !"); }
     }
 
     function majUIEtape() {
         const p = pointsDeLaTournee[indexEtapeActuelle];
         document.getElementById('current-target-name').innerText = `${indexEtapeActuelle + 1}. ${p["NOM DANS LISTING"]}`;
-        document.getElementById('current-target-info').innerText = `Prochain trajet : ~${segmentsTime[indexEtapeActuelle] || 0} min (${p.ADRESSE})`;
+        document.getElementById('current-target-info').innerText = `Trajet : ~${segmentsTime[indexEtapeActuelle] || 0} min (${p.ADRESSE})`;
         document.getElementById('progress-bar').style.width = ((indexEtapeActuelle + 1) / pointsDeLaTournee.length * 100) + "%";
         document.querySelectorAll('.numbered-marker').forEach(el => el.classList.remove('marker-active'));
         const active = document.querySelector(`.marker-id-${indexEtapeActuelle}`);
