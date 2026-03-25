@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TourniMap Hérault | IA Final</title>
+    <title>TourniMap Hérault | Vol d'oiseau</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
@@ -51,10 +51,10 @@
     <h1>TourniMap Hérault</h1>
     <div class="subtitle">MBS Junior Conseil</div>
     
-    <div class="label">1. Transport (Recalcule auto)</div>
+    <div class="label">1. Transport</div>
     <select id="modeSelect" onchange="lancerCalcul()">
-        <option value="foot">🚶 Marche / Tramway</option>
-        <option value="driving">🚗 Voiture</option>
+        <option value="foot">🚶 Marche (Vol d'oiseau 3 km/h)</option>
+        <option value="driving">🚗 Voiture (GPS Temps Réel)</option>
     </select>
 
     <div class="label">2. Secteur (Max 50 pts)</div>
@@ -96,7 +96,26 @@
     let indexEtapeActuelle = 0; 
     let segmentsTime = [];
 
-    // IA de sectorisation : Limite 50 pts + équilibre distance
+    // Fonction pour afficher des heures et minutes
+    function formaterTemps(minutes) {
+        if (minutes < 60) return `${minutes} min`;
+        return `${Math.floor(minutes/60)}h ${minutes%60}min`;
+    }
+
+    // Calcul de distance à vol d'oiseau (Formule de Haversine)
+    function distanceVolOiseau(lat1, lon1, lat2, lon2) {
+        const R = 6371e3; // Rayon de la terre en mètres
+        const p1 = lat1 * Math.PI/180;
+        const p2 = lat2 * Math.PI/180;
+        const dp = (lat2-lat1) * Math.PI/180;
+        const dl = (lon2-lon1) * Math.PI/180;
+
+        const a = Math.sin(dp/2) * Math.sin(dp/2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl/2) * Math.sin(dl/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        return R * c; // Retourne la distance en mètres
+    }
+
+    // IA de sectorisation : Limite 50 pts + équilibre distance (Code d'origine conservé)
     function sectorisationContrainte(points, k) {
         let centroids = [];
         for(let i=0; i<k; i++) {
@@ -154,7 +173,6 @@
                 ...d, Latitude: parseFloat(d.Latitude), Longitude: parseFloat(d.Longitude)
             })).filter(d => !isNaN(d.Latitude));
 
-            // Calcul dynamique du nombre de zones nécessaires pour ne pas dépasser 50 par zone
             let nbZones = Math.ceil(allData.length / 50);
             sectorisationContrainte(allData, nbZones);
 
@@ -206,27 +224,65 @@
             }).addTo(markersLayer).bindTooltip(`<b>${p["NOM DANS LISTING"]}</b>`, { className: 'leaflet-tooltip-own' });
         });
 
-        let coords = [pointDepartCoords[1] + "," + pointDepartCoords[0], ...pointsDeLaTournee.map(p => p.Longitude + "," + p.Latitude)];
+        // -----------------------------------------------------
+        // MODE MARCHE (Vol d'oiseau à 3 km/h)
+        // -----------------------------------------------------
+        if (mode === 'foot') {
+            statsBox.innerHTML = `⌛ Calcul (Vol d'oiseau à 3 km/h)...`;
+            
+            let coordsLatLons = [pointDepartCoords];
+            pointsDeLaTournee.forEach(p => coordsLatLons.push([p.Latitude, p.Longitude]));
+            
+            // Tracé d'une ligne droite pointillée verte
+            L.polyline(coordsLatLons, { color: '#10b981', weight: 3, dashArray: '5, 8' }).addTo(routeLayer);
+            
+            let posActuelle = { lat: pointDepartCoords[0], lng: pointDepartCoords[1] };
+            
+            pointsDeLaTournee.forEach(p => {
+                // Distance en mètres
+                let distMetres = distanceVolOiseau(posActuelle.lat, posActuelle.lng, p.Latitude, p.Longitude);
+                totalD += distMetres;
+                
+                // Vitesse: 3 km/h = 3000 mètres / 60 minutes = 50 mètres par minute
+                let tempsMinutes = distMetres / 50; 
+                
+                totalT += tempsMinutes * 60; // On stocke en secondes pour rester cohérent avec le reste
+                segmentsTime.push(Math.max(1, Math.round(tempsMinutes))); // Minimum 1 minute affichée
+                
+                posActuelle = { lat: p.Latitude, lng: p.Longitude };
+            });
 
-        try {
-            statsBox.innerHTML = `⌛ Calcul (${mode === 'foot' ? 'Pied' : 'Voiture'})...`;
-            const chunkSize = 15;
-            for (let i = 0; i < coords.length - 1; i += chunkSize - 1) {
-                const chunk = coords.slice(i, i + chunkSize);
-                const r = await fetch(`https://router.project-osrm.org/route/v1/${mode}/${chunk.join(';')}?overview=full&geometries=geojson`);
-                const d = await r.json();
-                if (d.code === 'Ok') {
-                    L.geoJSON(d.routes[0].geometry, { style: { color: '#2563eb', weight: 3, opacity: 0.6 } }).addTo(routeLayer);
-                    totalD += d.routes[0].distance; totalT += d.routes[0].duration;
-                    d.routes[0].legs.forEach(l => segmentsTime.push(Math.round(l.duration / 60)));
-                }
-                await new Promise(res => setTimeout(res, 200));
-            }
-            statsBox.innerHTML = `<b>Résumé Secteur ${zoneIdx}</b><br>📏 Distance : ${(totalD/1000).toFixed(1)} km<br>⏱️ Temps trajet : <b>${Math.round(totalT/60)} min</b><br>📍 Points : ${pointsDeLaTournee.length}`;
+            statsBox.innerHTML = `<b>Résumé Secteur ${zoneIdx}</b><br>📏 Distance : ${(totalD/1000).toFixed(1)} km<br>⏱️ Trajet (Vol d'oiseau) : <b>${formaterTemps(Math.round(totalT/60))}</b><br>📍 Points : ${pointsDeLaTournee.length}`;
             document.getElementById('nav-panel').style.display = 'block';
             majUIEtape();
             map.fitBounds(markersLayer.getBounds(), { padding: [30, 30] });
-        } catch (e) { statsBox.innerHTML = "⚠️ Erreur de calcul."; }
+
+        // -----------------------------------------------------
+        // MODE VOITURE (Route réelle via OSRM)
+        // -----------------------------------------------------
+        } else {
+            let coords = [pointDepartCoords[1] + "," + pointDepartCoords[0], ...pointsDeLaTournee.map(p => p.Longitude + "," + p.Latitude)];
+
+            try {
+                statsBox.innerHTML = `⌛ Calcul (Voiture GPS)...`;
+                const chunkSize = 15;
+                for (let i = 0; i < coords.length - 1; i += chunkSize - 1) {
+                    const chunk = coords.slice(i, i + chunkSize);
+                    const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${chunk.join(';')}?overview=full&geometries=geojson`);
+                    const d = await r.json();
+                    if (d.code === 'Ok') {
+                        L.geoJSON(d.routes[0].geometry, { style: { color: '#2563eb', weight: 3, opacity: 0.6 } }).addTo(routeLayer);
+                        totalD += d.routes[0].distance; totalT += d.routes[0].duration;
+                        d.routes[0].legs.forEach(l => segmentsTime.push(Math.round(l.duration / 60)));
+                    }
+                    await new Promise(res => setTimeout(res, 200));
+                }
+                statsBox.innerHTML = `<b>Résumé Secteur ${zoneIdx}</b><br>📏 Distance : ${(totalD/1000).toFixed(1)} km<br>⏱️ Temps trajet : <b>${formaterTemps(Math.round(totalT/60))}</b><br>📍 Points : ${pointsDeLaTournee.length}`;
+                document.getElementById('nav-panel').style.display = 'block';
+                majUIEtape();
+                map.fitBounds(markersLayer.getBounds(), { padding: [30, 30] });
+            } catch (e) { statsBox.innerHTML = "⚠️ Erreur de calcul OSRM."; }
+        }
     }
 
     function etapeSuivante() {
@@ -237,7 +293,7 @@
     function majUIEtape() {
         const p = pointsDeLaTournee[indexEtapeActuelle];
         document.getElementById('current-target-name').innerText = `${indexEtapeActuelle + 1}. ${p["NOM DANS LISTING"]}`;
-        document.getElementById('current-target-info').innerText = `Trajet : ~${segmentsTime[indexEtapeActuelle] || 0} min (${p.ADRESSE})`;
+        document.getElementById('current-target-info').innerText = `Trajet : ~${formaterTemps(segmentsTime[indexEtapeActuelle] || 0)} (${p.ADRESSE})`;
         document.getElementById('progress-bar').style.width = ((indexEtapeActuelle + 1) / pointsDeLaTournee.length * 100) + "%";
         document.querySelectorAll('.numbered-marker').forEach(el => el.classList.remove('marker-active'));
         const active = document.querySelector(`.marker-id-${indexEtapeActuelle}`);
