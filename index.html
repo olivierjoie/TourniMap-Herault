@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TourniMap Hérault | IA Final</title>
+    <title>TourniMap Hérault | IA Final (Heures & Compact)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
@@ -51,9 +51,9 @@
     <h1>TourniMap Hérault</h1>
     <div class="subtitle">MBS Junior Conseil</div>
     
-    <div class="label">1. Transport</div>
+    <div class="label">1. Transport (Recalcule auto)</div>
     <select id="modeSelect" onchange="resetEtCalculer()">
-        <option value="foot">🚶 Marche / Tramway</option>
+        <option value="foot">🚶 Marche (Pure) / Tramway</option>
         <option value="driving">🚗 Voiture</option>
     </select>
 
@@ -96,7 +96,13 @@
     let indexEtapeActuelle = 0; 
     let segmentsTime = [];
 
-    // IA de sectorisation : Limite 50 pts + équilibre distance
+    // Fonction d'affichage du temps propre
+    function formaterTemps(minutes) {
+        if (minutes < 60) return `${minutes} min`;
+        return `${Math.floor(minutes/60)}h ${minutes%60}min`;
+    }
+
+    // IA de sectorisation ultra-compacte
     function sectorisationContrainte(points, k) {
         let centroids = [];
         for(let i=0; i<k; i++) {
@@ -107,8 +113,10 @@
         const MAX_CAPACITY = 50; 
         let assignments = new Array(points.length).fill(-1);
 
-        for (let iter = 0; iter < 10; iter++) {
+        for (let iter = 0; iter < 15; iter++) {
             let zoneCounts = new Array(k).fill(0);
+            
+            // On calcule la distance de chaque point vers chaque centre
             let pointPrefs = points.map((p, i) => {
                 let dists = centroids.map((c, ci) => ({
                     idx: ci,
@@ -116,6 +124,10 @@
                 })).sort((a, b) => a.d - b.d);
                 return { pIdx: i, prefs: dists };
             });
+
+            // LA CORRECTION EST ICI : On trie les points pour que les plus proches d'un centre soient servis en premier.
+            // Ça évite qu'un point de Béziers vole la place d'un point de Montpellier dans une zone !
+            pointPrefs.sort((a, b) => a.prefs[0].d - b.prefs[0].d);
 
             pointPrefs.forEach(pp => {
                 for (let pref of pp.prefs) {
@@ -137,6 +149,7 @@
         }
         points.forEach((p, i) => p.AutoZone = assignments[i] + 1);
         
+        // Tri par proximité du départ
         let zoneMeta = centroids.map((c, i) => ({
             oldId: i + 1,
             dist: Math.sqrt(Math.pow(c.lat - pointDepartCoords[0], 2) + Math.pow(c.lng - pointDepartCoords[1], 2))
@@ -149,7 +162,7 @@
     Papa.parse("commerces.csv", {
         download: true, header: true, skipEmptyLines: true,
         complete: function(results) { 
-            // Correctif anti-bug : remplacement automatique des virgules en points pour les latitudes
+            // Correctif virgules
             allData = results.data.map(d => {
                 let lat = (d.Latitude || "").toString().replace(',', '.');
                 let lng = (d.Longitude || "").toString().replace(',', '.');
@@ -160,7 +173,7 @@
             sectorisationContrainte(allData, nbZones);
 
             const select = document.getElementById('zoneSelect');
-            select.innerHTML = '<option value="">-- Choisir --</option>';
+            select.innerHTML = '<option value="">-- Choisir un secteur --</option>';
             for(let i=1; i<=nbZones; i++) {
                 let count = allData.filter(d => d.AutoZone === i).length;
                 if(count > 0) select.innerHTML += `<option value="${i}">Secteur ${i} (${count} pts)</option>`;
@@ -216,7 +229,6 @@
             for (let i = 0; i < coords.length - 1; i += chunkSize - 1) {
                 const chunk = coords.slice(i, i + chunkSize);
                 
-                // On force OSRM en 'driving' car son API publique gratuite ignore le mode 'foot'
                 const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${chunk.join(';')}?overview=full&geometries=geojson`);
                 const d = await r.json();
                 
@@ -226,9 +238,8 @@
                     let distanceMetres = d.routes[0].distance;
                     totalD += distanceMetres; 
                     
-                    // Calcul mathématique du temps si on est à pied (5 km/h = 1.38 m/s)
                     if (mode === 'foot') {
-                        let tempsSecondes = distanceMetres / 1.38;
+                        let tempsSecondes = distanceMetres / 1.38; // 5 km/h
                         totalT += tempsSecondes;
                         d.routes[0].legs.forEach(l => segmentsTime.push(Math.round((l.distance / 1.38) / 60)));
                     } else {
@@ -238,11 +249,15 @@
                 }
                 await new Promise(res => setTimeout(res, 200));
             }
-            statsBox.innerHTML = `<b>Résumé Secteur ${zoneIdx}</b><br>📏 Distance : ${(totalD/1000).toFixed(1)} km<br>⏱️ Temps trajet : <b>${Math.round(totalT/60)} min</b><br>📍 Points : ${pointsDeLaTournee.length}`;
+            
+            // Formatage propre du temps
+            let minTotal = Math.round(totalT/60);
+            
+            statsBox.innerHTML = `<b>Résumé Secteur ${zoneIdx}</b><br>📏 Distance : ${(totalD/1000).toFixed(1)} km<br>⏱️ Temps trajet : <b>${formaterTemps(minTotal)}</b><br>📍 Points : ${pointsDeLaTournee.length}`;
             document.getElementById('nav-panel').style.display = 'block';
             majUIEtape();
             map.fitBounds(markersLayer.getBounds(), { padding: [30, 30] });
-        } catch (e) { statsBox.innerHTML = "⚠️ Erreur de calcul."; }
+        } catch (e) { statsBox.innerHTML = "⚠️ Erreur de calcul. Veuillez réessayer."; }
     }
 
     function etapeSuivante() {
@@ -253,7 +268,10 @@
     function majUIEtape() {
         const p = pointsDeLaTournee[indexEtapeActuelle];
         document.getElementById('current-target-name').innerText = `${indexEtapeActuelle + 1}. ${p["NOM DANS LISTING"]}`;
-        document.getElementById('current-target-info').innerText = `Trajet : ~${segmentsTime[indexEtapeActuelle] || 0} min (${p.ADRESSE})`;
+        
+        let tempsSegment = formaterTemps(segmentsTime[indexEtapeActuelle] || 0);
+        document.getElementById('current-target-info').innerText = `Trajet : ~${tempsSegment} (${p.ADRESSE})`;
+        
         document.getElementById('progress-bar').style.width = ((indexEtapeActuelle + 1) / pointsDeLaTournee.length * 100) + "%";
         document.querySelectorAll('.numbered-marker').forEach(el => el.classList.remove('marker-active'));
         const active = document.querySelector(`.marker-id-${indexEtapeActuelle}`);
