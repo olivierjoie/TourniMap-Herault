@@ -3,28 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TourniMap Hérault | IA Anti-Plantage</title>
+    <title>TourniMap Hérault | IA Final</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
         :root { --primary: #2563eb; --dark: #1e293b; --bg: #f8fafc; --success: #10b981; }
         body { margin: 0; font-family: 'Inter', sans-serif; display: flex; height: 100vh; background: var(--bg); overflow: hidden;}
-        #sidebar { width: 320px; background: white; display: flex; flex-direction: column; box-shadow: 4px 0 15px rgba(0,0,0,0.05); z-index: 3000; padding: 20px; box-sizing: border-box; transition: transform 0.3s ease; position: relative; }
+        
+        #sidebar { 
+            width: 320px; background: white; display: flex; flex-direction: column; 
+            box-shadow: 4px 0 15px rgba(0,0,0,0.05); z-index: 3000; padding: 20px; 
+            box-sizing: border-box; transition: transform 0.3s ease; position: relative; 
+        }
         #sidebar.hidden { transform: translateX(-100%); position: absolute; height: 100%; }
-        #toggle-btn { position: absolute; right: -45px; top: 15px; width: 40px; height: 40px; background: var(--primary); color: white; border: none; border-radius: 0 8px 8px 0; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; }
+        
+        #toggle-btn { 
+            position: absolute; right: -45px; top: 15px; width: 40px; height: 40px; 
+            background: var(--primary); color: white; border: none; border-radius: 0 8px 8px 0; 
+            cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center;
+        }
+
         h1 { font-size: 1.1rem; color: var(--dark); margin: 0; }
         .subtitle { font-size: 0.7rem; color: #64748b; margin-bottom: 15px; }
         .label { font-size: 0.65rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin: 10px 0 5px 0; }
+        
         select, button.action-btn { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 0.85rem; margin-bottom: 8px; outline: none; }
         button.action-btn { background: var(--primary); color: white; border: none; font-weight: 600; cursor: pointer; }
+        
         #nav-panel { background: #eff6ff; border: 2px solid var(--primary); border-radius: 10px; padding: 12px; margin-top: 10px; display: none; }
         .progress-container { background: #e2e8f0; border-radius: 10px; height: 6px; margin: 8px 0; overflow: hidden; }
         #progress-bar { background: var(--success); width: 0%; height: 100%; transition: width 0.3s; }
+        
         #stats { margin-top: auto; background: #f8fafc; padding: 12px; border-radius: 10px; font-size: 0.75rem; border: 1px solid #e2e8f0; line-height: 1.4; }
         #map { flex-grow: 1; z-index: 1; background: #ddd; }
+
         .numbered-marker { background-color: var(--primary); color: white; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; }
         .marker-active { background-color: var(--success) !important; transform: scale(1.2); z-index: 1000 !important; }
-        .leaflet-tooltip-own { background-color: var(--dark); color: white; border: none; border-radius: 4px; padding: 5px 10px; font-size: 0.7rem; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        .leaflet-tooltip-own { background-color: var(--dark); color: white; border: none; border-radius: 4px; padding: 5px 10px; font-size: 0.7rem; }
+
         @media (max-width: 600px) { #sidebar { width: 280px; position: absolute; height: 100%; } }
     </style>
 </head>
@@ -35,15 +51,15 @@
     <h1>TourniMap Hérault</h1>
     <div class="subtitle">MBS Junior Conseil</div>
     
-    <div class="label">1. Transport</div>
-    <select id="modeSelect" onchange="resetEtCalculer()">
-        <option value="foot">🚶 Marche / Tramway (5 km/h)</option>
-        <option value="driving">🚗 Voiture (Temps Réel)</option>
+    <div class="label">1. Transport (Recalcule auto)</div>
+    <select id="modeSelect" onchange="lancerCalcul()">
+        <option value="foot">🚶 Marche / Tramway</option>
+        <option value="driving">🚗 Voiture</option>
     </select>
 
     <div class="label">2. Secteur (Max 50 pts)</div>
     <select id="zoneSelect" onchange="resetEtCalculer()">
-        <option value="">-- Attente du fichier... --</option>
+        <option value="">-- Analyse des points... --</option>
     </select>
     
     <div id="nav-panel">
@@ -53,7 +69,7 @@
         <button class="action-btn" onclick="etapeSuivante()" style="background:var(--success); margin-top:8px;">Étape Validée</button>
     </div>
     
-    <div id="stats">⌛ Chargement du fichier...</div>
+    <div id="stats">Chargement des données...</div>
 </div>
 
 <div id="map"></div>
@@ -80,11 +96,7 @@
     let indexEtapeActuelle = 0; 
     let segmentsTime = [];
 
-    function formaterTemps(minutes) {
-        if (minutes < 60) return `${minutes} min`;
-        return `${Math.floor(minutes/60)}h ${minutes%60}min`;
-    }
-
+    // IA de sectorisation : Limite 50 pts + équilibre distance
     function sectorisationContrainte(points, k) {
         let centroids = [];
         for(let i=0; i<k; i++) {
@@ -95,9 +107,8 @@
         const MAX_CAPACITY = 50; 
         let assignments = new Array(points.length).fill(-1);
 
-        for (let iter = 0; iter < 15; iter++) {
+        for (let iter = 0; iter < 10; iter++) {
             let zoneCounts = new Array(k).fill(0);
-            
             let pointPrefs = points.map((p, i) => {
                 let dists = centroids.map((c, ci) => ({
                     idx: ci,
@@ -126,6 +137,7 @@
         }
         points.forEach((p, i) => p.AutoZone = assignments[i] + 1);
         
+        // Tri par proximité départ
         let zoneMeta = centroids.map((c, i) => ({
             oldId: i + 1,
             dist: Math.sqrt(Math.pow(c.lat - pointDepartCoords[0], 2) + Math.pow(c.lng - pointDepartCoords[1], 2))
@@ -135,51 +147,24 @@
         points.forEach(p => p.AutoZone = mapping[p.AutoZone]);
     }
 
-    // LECTURE DU FICHIER CSV AVEC SECURITES ANTI-PLANTAGE
     Papa.parse("commerces.csv", {
-        download: true, 
-        header: true, 
-        skipEmptyLines: true,
+        download: true, header: true, skipEmptyLines: true,
         complete: function(results) { 
-            
-            // Sécurité 1 : Le fichier est introuvable (Github renvoie une page 404)
-            if (results.data.length === 0 || !results.data[0]) {
-                document.getElementById('stats').innerHTML = "⚠️ ERREUR : Le fichier 'commerces.csv' est vide ou introuvable.";
-                return;
-            }
+            allData = results.data.map(d => ({
+                ...d, Latitude: parseFloat(d.Latitude), Longitude: parseFloat(d.Longitude)
+            })).filter(d => !isNaN(d.Latitude));
 
-            // Sécurité 2 : Traitement des données et gestion des minuscules/majuscules
-            allData = results.data.map(d => {
-                let rawLat = d.Latitude || d.latitude || "";
-                let rawLng = d.Longitude || d.longitude || "";
-                
-                let lat = rawLat.toString().replace(',', '.');
-                let lng = rawLng.toString().replace(',', '.');
-                return { ...d, Latitude: parseFloat(lat), Longitude: parseFloat(lng) };
-            }).filter(d => !isNaN(d.Latitude) && !isNaN(d.Longitude));
-
-            // Sécurité 3 : Aucune coordonnée trouvée
-            if (allData.length === 0) {
-                document.getElementById('stats').innerHTML = "⚠️ ERREUR : Aucune colonne 'Latitude' ou 'Longitude' valide trouvée dans le CSV.";
-                document.getElementById('zoneSelect').innerHTML = '<option value="">-- Erreur de fichier --</option>';
-                return;
-            }
-
-            allData.sort(() => Math.random() - 0.5);
-
+            // Calcul dynamique du nombre de zones nécessaires pour ne pas dépasser 50 par zone
             let nbZones = Math.ceil(allData.length / 50);
             sectorisationContrainte(allData, nbZones);
 
             const select = document.getElementById('zoneSelect');
-            select.innerHTML = '<option value="">-- Choisir un secteur --</option>';
+            select.innerHTML = '<option value="">-- Choisir --</option>';
             for(let i=1; i<=nbZones; i++) {
                 let count = allData.filter(d => d.AutoZone === i).length;
                 if(count > 0) select.innerHTML += `<option value="${i}">Secteur ${i} (${count} pts)</option>`;
             }
-            document.getElementById('stats').innerHTML = `✅ Succès : ${allData.length} points chargés.`;
-        },
-        error: function(err) {
-            document.getElementById('stats').innerHTML = "⚠️ ERREUR RESEAU : Impossible de charger le fichier.";
+            document.getElementById('stats').innerHTML = "Données prêtes.";
         }
     });
 
@@ -199,8 +184,7 @@
     function resetEtCalculer() { 
         indexEtapeActuelle = 0; 
         lancerCalcul(); 
-        const zoneIdx = parseInt(document.getElementById('zoneSelect').value);
-        if (window.innerWidth < 600 && zoneIdx) toggleSidebar(); 
+        if (window.innerWidth < 600) toggleSidebar(); 
     }
 
     async function lancerCalcul() {
@@ -225,54 +209,24 @@
         let coords = [pointDepartCoords[1] + "," + pointDepartCoords[0], ...pointsDeLaTournee.map(p => p.Longitude + "," + p.Latitude)];
 
         try {
-            statsBox.innerHTML = `⌛ Calcul en cours...`;
+            statsBox.innerHTML = `⌛ Calcul (${mode === 'foot' ? 'Pied' : 'Voiture'})...`;
             const chunkSize = 15;
-            
             for (let i = 0; i < coords.length - 1; i += chunkSize - 1) {
                 const chunk = coords.slice(i, i + chunkSize);
-                
-                try {
-                    const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${chunk.join(';')}?overview=full&geometries=geojson`);
-                    if (!r.ok) throw new Error("Serveur GPS injoignable");
-                    const d = await r.json();
-                    
-                    if (d.code === 'Ok') {
-                        let routeColor = mode === 'foot' ? '#10b981' : '#2563eb';
-                        L.geoJSON(d.routes[0].geometry, { style: { color: routeColor, weight: 4, opacity: 0.6 } }).addTo(routeLayer);
-                        
-                        let distanceMetres = d.routes[0].distance;
-                        totalD += distanceMetres;
-                        
-                        d.routes[0].legs.forEach(leg => {
-                            let sec = mode === 'foot' ? (leg.distance / 1.38) : leg.duration;
-                            totalT += sec;
-                            segmentsTime.push(Math.max(1, Math.round(sec / 60)));
-                        });
-                    } else {
-                        throw new Error("Trajet impossible");
-                    }
-                } catch (segmentError) {
-                    let fallbackCoords = chunk.map(c => [parseFloat(c.split(',')[1]), parseFloat(c.split(',')[0])]);
-                    L.polyline(fallbackCoords, { color: '#ef4444', weight: 3, dashArray: '5, 10', opacity: 0.7 }).addTo(routeLayer);
-                    for (let j = 0; j < chunk.length - 1; j++) {
-                        segmentsTime.push(5);
-                        totalT += 300; 
-                    }
+                const r = await fetch(`https://router.project-osrm.org/route/v1/${mode}/${chunk.join(';')}?overview=full&geometries=geojson`);
+                const d = await r.json();
+                if (d.code === 'Ok') {
+                    L.geoJSON(d.routes[0].geometry, { style: { color: '#2563eb', weight: 3, opacity: 0.6 } }).addTo(routeLayer);
+                    totalD += d.routes[0].distance; totalT += d.routes[0].duration;
+                    d.routes[0].legs.forEach(l => segmentsTime.push(Math.round(l.duration / 60)));
                 }
-                
-                await new Promise(res => setTimeout(res, 400));
+                await new Promise(res => setTimeout(res, 200));
             }
-            
-            let minTotal = Math.round(totalT/60);
-            let iconeMode = mode === 'foot' ? '🚶' : '🚗';
-            
-            statsBox.innerHTML = `<b>Résumé Secteur ${zoneIdx}</b><br>📏 Distance : ${(totalD/1000).toFixed(1)} km<br>⏱️ Trajet ${iconeMode} : <b>${formaterTemps(minTotal)}</b><br>📍 Boutiques : ${pointsDeLaTournee.length}`;
+            statsBox.innerHTML = `<b>Résumé Secteur ${zoneIdx}</b><br>📏 Distance : ${(totalD/1000).toFixed(1)} km<br>⏱️ Temps trajet : <b>${Math.round(totalT/60)} min</b><br>📍 Points : ${pointsDeLaTournee.length}`;
             document.getElementById('nav-panel').style.display = 'block';
             majUIEtape();
             map.fitBounds(markersLayer.getBounds(), { padding: [30, 30] });
-        } catch (e) { 
-            statsBox.innerHTML = "⚠️ Erreur critique du calcul."; 
-        }
+        } catch (e) { statsBox.innerHTML = "⚠️ Erreur de calcul."; }
     }
 
     function etapeSuivante() {
@@ -283,8 +237,12 @@
     function majUIEtape() {
         const p = pointsDeLaTournee[indexEtapeActuelle];
         document.getElementById('current-target-name').innerText = `${indexEtapeActuelle + 1}. ${p["NOM DANS LISTING"]}`;
-        
-        let tempsSegment = formaterTemps(segmentsTime[indexEtapeActuelle] || 0);
-        document.getElementById('current-target-info').innerText = `Trajet : ~${tempsSegment} (${p.ADRESSE})`;
-        
-        document.getElementById('progress-bar').style.width = ((indexEtapeActuelle + 1) / pointsDeLaTournee.length * 100) +
+        document.getElementById('current-target-info').innerText = `Trajet : ~${segmentsTime[indexEtapeActuelle] || 0} min (${p.ADRESSE})`;
+        document.getElementById('progress-bar').style.width = ((indexEtapeActuelle + 1) / pointsDeLaTournee.length * 100) + "%";
+        document.querySelectorAll('.numbered-marker').forEach(el => el.classList.remove('marker-active'));
+        const active = document.querySelector(`.marker-id-${indexEtapeActuelle}`);
+        if(active) active.classList.add('marker-active');
+    }
+</script>
+</body>
+</html>
