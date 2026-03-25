@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TourniMap Hérault | IA Final</title>
+    <title>TourniMap Hérault | Secteurs Limités (50pts)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
@@ -51,8 +51,8 @@
     <h1>TourniMap Hérault</h1>
     <div class="subtitle">MBS Junior Conseil</div>
     
-    <div class="label">1. Transport (Recalcule auto)</div>
-    <select id="modeSelect" onchange="lancerCalcul()">
+    <div class="label">1. Transport</div>
+    <select id="modeSelect" onchange="resetEtCalculer()">
         <option value="foot">🚶 Marche / Tramway</option>
         <option value="driving">🚗 Voiture</option>
     </select>
@@ -154,7 +154,7 @@
                 ...d, Latitude: parseFloat(d.Latitude), Longitude: parseFloat(d.Longitude)
             })).filter(d => !isNaN(d.Latitude));
 
-            // Calcul dynamique du nombre de zones nécessaires pour ne pas dépasser 50 par zone
+            // Calcul dynamique du nombre de zones pour ne pas dépasser 50 par zone
             let nbZones = Math.ceil(allData.length / 50);
             sectorisationContrainte(allData, nbZones);
 
@@ -184,7 +184,9 @@
     function resetEtCalculer() { 
         indexEtapeActuelle = 0; 
         lancerCalcul(); 
-        if (window.innerWidth < 600) toggleSidebar(); 
+        // Ferme le menu sur mobile uniquement si un secteur est sélectionné
+        const zoneIdx = parseInt(document.getElementById('zoneSelect').value);
+        if (window.innerWidth < 600 && zoneIdx) toggleSidebar(); 
     }
 
     async function lancerCalcul() {
@@ -226,7 +228,7 @@
             document.getElementById('nav-panel').style.display = 'block';
             majUIEtape();
             map.fitBounds(markersLayer.getBounds(), { padding: [30, 30] });
-        } catch (e) { statsBox.innerHTML = "⚠️ Erreur de calcul."; }
+        } catch (e) { statsBox.innerHTML = "⚠️ Erreur de calcul. Veuillez réessayer."; }
     }
 
     function etapeSuivante() {
