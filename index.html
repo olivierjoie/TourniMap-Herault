@@ -57,7 +57,7 @@
         <option value="driving">🚗 Voiture</option>
     </select>
 
-    <div class="label">2. Secteur (Max 150 pts)</div>
+    <div class="label">2. Secteur (Max 50 pts)</div>
     <select id="zoneSelect" onchange="resetEtCalculer()">
         <option value="">-- Analyse des points... --</option>
     </select>
@@ -96,7 +96,7 @@
     let indexEtapeActuelle = 0; 
     let segmentsTime = [];
 
-    // IA de sectorisation : Limite 150 pts + équilibre distance
+    // IA de sectorisation : Limite 50 pts + équilibre distance
     function sectorisationContrainte(points, k) {
         let centroids = [];
         for(let i=0; i<k; i++) {
@@ -104,7 +104,7 @@
             centroids.push({ lat: p.Latitude, lng: p.Longitude });
         }
 
-        const MAX_CAPACITY = 150; 
+        const MAX_CAPACITY = 50; 
         let assignments = new Array(points.length).fill(-1);
 
         for (let iter = 0; iter < 10; iter++) {
@@ -154,11 +154,13 @@
                 ...d, Latitude: parseFloat(d.Latitude), Longitude: parseFloat(d.Longitude)
             })).filter(d => !isNaN(d.Latitude));
 
-            sectorisationContrainte(allData, 13);
+            // Calcul dynamique du nombre de zones nécessaires pour ne pas dépasser 50 par zone
+            let nbZones = Math.ceil(allData.length / 50);
+            sectorisationContrainte(allData, nbZones);
 
             const select = document.getElementById('zoneSelect');
             select.innerHTML = '<option value="">-- Choisir --</option>';
-            for(let i=1; i<=13; i++) {
+            for(let i=1; i<=nbZones; i++) {
                 let count = allData.filter(d => d.AutoZone === i).length;
                 if(count > 0) select.innerHTML += `<option value="${i}">Secteur ${i} (${count} pts)</option>`;
             }
