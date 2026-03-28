@@ -61,7 +61,12 @@
     <select id="zoneSelect" onchange="resetEtCalculer()">
         <option value="">-- Analyse des points... --</option>
     </select>
-    
+
+    <div class="label">3. Trouver un point</div>
+    <select id="pointSearchSelect" onchange="trouverZonePoint()">
+        <option value="">-- Chercher par nom... --</option>
+    </select>
+    <div id="pointSearchResult" style="font-size: 0.75rem; color: var(--primary); font-weight: 600; margin-bottom: 8px; display: none;"></div>
     <div id="nav-panel">
         <div id="current-target-name" style="font-weight:600; font-size:0.85rem;">-</div>
         <div class="progress-container"><div id="progress-bar"></div></div>
@@ -183,6 +188,16 @@
                 if(count > 0) select.innerHTML += `<option value="${i}">Secteur ${i} (${count} pts)</option>`;
             }
             document.getElementById('stats').innerHTML = "Données prêtes.";
+
+            // AJOUT : Remplissage de la liste de recherche (triée par ordre alphabétique)
+            const searchSelect = document.getElementById('pointSearchSelect');
+            let dataTriee = [...allData].sort((a, b) => (a["NOM DANS LISTING"] || "").localeCompare(b["NOM DANS LISTING"] || ""));
+            dataTriee.forEach(d => {
+                if(d["NOM DANS LISTING"]) {
+                    searchSelect.innerHTML += `<option value="${d.AutoZone}">${d["NOM DANS LISTING"]}</option>`;
+                }
+            });
+            // FIN DE L'AJOUT
         }
     });
 
@@ -299,6 +314,19 @@
         const active = document.querySelector(`.marker-id-${indexEtapeActuelle}`);
         if(active) active.classList.add('marker-active');
     }
+
+    // AJOUT : Nouvelle fonction déclenchée par la liste déroulante
+    function trouverZonePoint() {
+        const select = document.getElementById('pointSearchSelect');
+        const res = document.getElementById('pointSearchResult');
+        if (select.value) {
+            res.style.display = 'block';
+            res.innerHTML = `📍 Ce point est dans le <b>Secteur ${select.value}</b>`;
+        } else {
+            res.style.display = 'none';
+        }
+    }
+    // FIN DE L'AJOUT
 </script>
 </body>
 </html>
