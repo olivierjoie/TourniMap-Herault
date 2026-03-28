@@ -67,6 +67,9 @@
         <option value="">-- Chercher par nom... --</option>
     </select>
     <div id="pointSearchResult" style="font-size: 0.75rem; color: var(--primary); font-weight: 600; margin-bottom: 8px; display: none;"></div>
+    
+    <div class="label">4. Exporter les tournées</div>
+    <button class="action-btn" onclick="telechargerListe()" style="background: var(--dark);">📥 Télécharger le fichier</button>
     <div id="nav-panel">
         <div id="current-target-name" style="font-weight:600; font-size:0.85rem;">-</div>
         <div class="progress-container"><div id="progress-bar"></div></div>
@@ -189,7 +192,6 @@
             }
             document.getElementById('stats').innerHTML = "Données prêtes.";
 
-            // AJOUT : Remplissage de la liste de recherche (triée par ordre alphabétique)
             const searchSelect = document.getElementById('pointSearchSelect');
             let dataTriee = [...allData].sort((a, b) => (a["NOM DANS LISTING"] || "").localeCompare(b["NOM DANS LISTING"] || ""));
             dataTriee.forEach(d => {
@@ -197,7 +199,6 @@
                     searchSelect.innerHTML += `<option value="${d.AutoZone}">${d["NOM DANS LISTING"]}</option>`;
                 }
             });
-            // FIN DE L'AJOUT
         }
     });
 
@@ -315,7 +316,6 @@
         if(active) active.classList.add('marker-active');
     }
 
-    // AJOUT : Nouvelle fonction déclenchée par la liste déroulante
     function trouverZonePoint() {
         const select = document.getElementById('pointSearchSelect');
         const res = document.getElementById('pointSearchResult');
@@ -325,6 +325,48 @@
         } else {
             res.style.display = 'none';
         }
+    }
+
+    // AJOUT : Fonction d'exportation de la liste triée
+    function telechargerListe() {
+        if (allData.length === 0) {
+            alert("Veuillez patienter, les données chargent...");
+            return;
+        }
+
+        // On inclut le BOM pour forcer Excel à lire le format UTF-8 (accents) correctement
+        let csvContent = "\uFEFF";
+        csvContent += "Zone;Numero du point;Nom du commerce;Adresse\n";
+
+        let nbZones = Math.max(...allData.map(d => d.AutoZone));
+
+        // On boucle sur chaque zone
+        for (let z = 1; z <= nbZones; z++) {
+            let ptsZone = allData.filter(d => d.AutoZone === z);
+            if (ptsZone.length === 0) continue;
+
+            // On lance le même calcul d'ordre que la carte pour cette zone
+            let pointsOrdonnes = ordonnerPointsTSP(pointDepartCoords, ptsZone);
+
+            // On ajoute les points au fichier CSV
+            pointsOrdonnes.forEach((p, index) => {
+                // On nettoie les guillemets éventuels pour ne pas casser le fichier
+                let nom = p["NOM DANS LISTING"] ? p["NOM DANS LISTING"].replace(/"/g, '""') : "Nom inconnu";
+                let adresse = p.ADRESSE ? p.ADRESSE.replace(/"/g, '""') : "Adresse inconnue";
+                
+                csvContent += `${z};${index + 1};"${nom}";"${adresse}"\n`;
+            });
+        }
+
+        // Lancement automatique du téléchargement
+        let blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        let url = URL.createObjectURL(blob);
+        let link = document.createElement("a");
+        link.href = url;
+        link.download = "Tournees_Herault_Listes.csv";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     }
     // FIN DE L'AJOUT
 </script>
